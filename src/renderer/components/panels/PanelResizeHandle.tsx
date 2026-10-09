@@ -18,7 +18,7 @@
 // (role="separator", aria-orientation, aria-valuenow/min/max). Focus is a
 // distinct outline, never the text selection.
 
-import { useCallback, useRef, type ReactElement } from "react";
+import { useCallback, useEffect, useRef, type ReactElement } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent, PointerEvent as ReactPointerEvent } from "react";
 import { INSPECTOR_COLLAPSED_W_PX } from "../multiPaneLayout";
 
@@ -180,6 +180,13 @@ export interface PanelResizeHandleProps {
   onResize: (width: number) => void;
   /** Called once the gesture settles, for the settings write. */
   onCommit: (width: number) => void;
+  /** TFL-1455 — fired on pointerdown when a drag gesture actually begins, so
+   *  the host can suppress the layout transitions that would otherwise animate
+   *  the panel/edge toward each drag frame. */
+  onGestureStart?: () => void;
+  /** TFL-1455 — fired on pointerup / pointercancel and on unmount, so the
+   *  suppress flag can never stick. */
+  onGestureEnd?: () => void;
   "data-testid"?: string;
 }
 
@@ -194,11 +201,22 @@ const HANDLE_LABEL: Record<PanelSide, string> = {
  * `Home` / `End` commit immediately.
  */
 export function PanelResizeHandle(props: PanelResizeHandleProps): ReactElement {
-  const { side, width, onResize, onCommit } = props;
+  const { side, width, onResize, onCommit, onGestureStart, onGestureEnd } = props;
   const range = panelWidthRange(side);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
   const frameRef = useRef<number | null>(null);
   const pendingRef = useRef<number | null>(null);
+
+  // TFL-1455 — keep the latest gesture-end callback so the unmount cleanup
+  // never captures a stale one, and clear the host flag only if THIS handle
+  // owned the active gesture (never clobber a gesture on the other separator).
+  const onGestureEndRef = useRef(onGestureEnd);
+  onGestureEndRef.current = onGestureEnd;
+  useEffect((): (() => void) => {
+    return (): void => {
+      if (dragRef.current !== null) onGestureEndRef.current?.();
+    };
+  }, []);
 
   const widthAt = useCallback(
     (clientX: number): number => {
@@ -222,6 +240,7 @@ export function PanelResizeHandle(props: PanelResizeHandleProps): ReactElement {
     (e: ReactPointerEvent<HTMLDivElement>): void => {
       if (e.button !== undefined && e.button !== 0) return;
       dragRef.current = { startX: e.clientX, startWidth: width };
+      onGestureStart?.();
       if (typeof e.currentTarget.setPointerCapture === "function") {
         try {
           e.currentTarget.setPointerCapture(e.pointerId);
@@ -231,7 +250,7 @@ export function PanelResizeHandle(props: PanelResizeHandleProps): ReactElement {
       }
       e.preventDefault();
     },
-    [width],
+    [onGestureStart, width],
   );
 
   const onPointerMove = useCallback(
@@ -259,8 +278,9 @@ export function PanelResizeHandle(props: PanelResizeHandleProps): ReactElement {
       frameRef.current = null;
       onResize(next);
       onCommit(next);
+      onGestureEnd?.();
     },
-    [onCommit, onResize, widthAt],
+    [onCommit, onGestureEnd, onResize, widthAt],
   );
 
   const onKeyDown = useCallback(

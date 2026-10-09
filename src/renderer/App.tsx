@@ -55,7 +55,7 @@ import { AppHeader } from "./components/AppHeader";
 // exported contract, so App persists the same value the panel displays.
 import { clampSplitRatio } from "./components/ContextPanel";
 import { DocumentRail, isDocumentRailVisible } from "./components/DocumentRail";
-import { Toasts, type Toast } from "./components/Toasts";
+import { Toasts, type Toast, type ToastKind } from "./components/Toasts";
 import { printWindowOpenFailureMessage } from "./print-window/context";
 import { TitleBar, type MenuGroup } from "./components/TitleBar";
 import {
@@ -195,6 +195,7 @@ import {
   DEFAULT_TAB_STYLE,
   clampOcrDownsample,
   preferencesReducer,
+  type ThemeDefault,
 } from "./state/preferences";
 import { applyAnnotationPaletteChange } from "./state/colorPalette";
 import { exportDraftFor, type ExportDraft } from "./state/exportDraft";
@@ -231,6 +232,9 @@ import { downloadBlob } from "./utils/exportDownload";
 import { PasswordPromptDialog } from "./components/PasswordPromptDialog";
 import { ProtectionNotice } from "./components/ProtectionNotice";
 import { ConversionNotice } from "./components/ConversionNotice";
+// Phase 126 (chunk B1) — the in-canvas warning/error notice that replaces the
+// retired warning/error toast popups.
+import { CanvasAlertNotice } from "./components/CanvasAlertNotice";
 // TFL-1216 (chunk C4b) — the Activity Shelf surface (summary + panel) and the
 // store that owns its operations. The App mounts the surface once and feeds it
 // operations the OCR producer creates; all transitions stay in the pure store.
@@ -349,7 +353,6 @@ import { BlankPagesDialog } from "./components/BlankPagesDialog";
 import { CloseTabPromptDialog, type CloseTabPromptChoice } from "./components/CloseTabPromptDialog";
 import { SignatureManagerModal } from "./signatures/SignatureManagerModal";
 import { FlattenConfirmDialog } from "./forms/FlattenConfirmDialog";
-import { GuidedFillPanel } from "./forms/GuidedFillPanel";
 import {
   OcrDialog,
   type OcrDialogConfirm,
@@ -523,18 +526,34 @@ interface OpenSource {
  *  each pane's `DocumentView` renders its OWN thumbnail strip at that
  *  pane's inner edge (see `DocumentView`'s `multiRail` prop), so the
  *  per-section data mirror that lived here is retired. */
-interface AppErrorState {
+export interface AppErrorState {
   toasts: Toast[];
+  alerts: { warning: string[]; error: string[] };
   nextId: number;
-}type ErrorAction =
-  | { type: "push"; toast: Omit<Toast, "id"> }
+}
+export type ErrorAction =
+  | { type: "push"; toast: { kind: ToastKind; text: string } }
   | { type: "dismiss"; id: number };
 
-function errorReducer(state: AppErrorState, action: ErrorAction): AppErrorState {
+/** Phase 126 (chunk B1) — the single routing point for feedback. `info` /
+ *  `success` still append a dismissible toast; `warning` / `error` append
+ *  their text to the in-canvas notice arrays, DEDUPED by exact string, with
+ *  no id, no timer and no dismiss control. Routing here means every existing
+ *  `pushToast` call site stays untouched. Exported for the renderer unit
+ *  tests (the routing merge/dedupe is otherwise unreachable). */
+export function errorReducer(state: AppErrorState, action: ErrorAction): AppErrorState {
   switch (action.type) {
     case "push": {
+      const { kind, text } = action.toast;
+      if (kind === "warning" || kind === "error") {
+        if (state.alerts[kind].includes(text)) return state;
+        return {
+          ...state,
+          alerts: { ...state.alerts, [kind]: [...state.alerts[kind], text] },
+        };
+      }
       const id = state.nextId;
-      return { toasts: [...state.toasts, { id, ...action.toast }], nextId: id + 1 };
+      return { ...state, toasts: [...state.toasts, { id, kind, text }], nextId: id + 1 };
     }
     case "dismiss": {
       return { ...state, toasts: state.toasts.filter((t) => t.id !== action.id) };
@@ -652,7 +671,7 @@ export function tabExitAction(isDetachedWindow: boolean): "return" | "detach" {
  *  `null` when the detach may proceed. Pure so the decision is unit-tested. */
 export function detachRefusal(
   hasDocument: boolean,
-): { kind: Toast["kind"]; text: string } | null {
+): { kind: ToastKind; text: string } | null {
   if (hasDocument) return null;
   return { kind: "warning", text: "This tab has no document to move." };
 }
@@ -687,6 +706,9 @@ export interface DocumentSurfaceColumnProps {
   conversion: ConvertNoticeState | undefined;
   validation: ValidationNoticeState | undefined;
   protection: DocumentProtectionState | undefined;
+  /** Phase 126 (chunk B1) — the active tab's in-canvas warning/error messages.
+   *  Rendered as `CanvasAlertNotice` boxes inside the canvas notice layer. */
+  alert?: { warning: string[]; error: string[] };
   /** Phase 57 (feature A) — 3D annotations the app cannot render. Rendered as
    *  a non-dismissible slim bar above the page area, never an overlay. */
   pdf3d?: readonly Pdf3dContent[];
@@ -702,7 +724,7 @@ export interface DocumentSurfaceColumnProps {
 }
 
 export function DocumentSurfaceColumn(props: DocumentSurfaceColumnProps): ReactElement {
-  const { sourceFormat } = props;
+  const { sourceFormat, alert } = props;
   // Phase 66 (chunk 1) — the reader entry is EPUB ONLY now. The cbz/cbt
   // "Open comic view" trigger is gone: the canvas "Book View" control (mounted
   // in DocumentView) supersedes it for any open document.
@@ -717,7 +739,9 @@ export function DocumentSurfaceColumn(props: DocumentSurfaceColumnProps): ReactE
   const notices: ReactNode =
     props.protection !== undefined ||
     props.conversion !== undefined ||
-    (props.pdf3d !== undefined && props.pdf3d.length > 0) ? (
+    (props.pdf3d !== undefined && props.pdf3d.length > 0) ||
+    (alert?.warning.length ?? 0) > 0 ||
+    (alert?.error.length ?? 0) > 0 ? (
       <>
         {props.protection !== undefined && (
           <ProtectionNotice
@@ -733,6 +757,12 @@ export function DocumentSurfaceColumn(props: DocumentSurfaceColumnProps): ReactE
         )}
         {props.pdf3d !== undefined && props.pdf3d.length > 0 && (
           <Pdf3dNotice entries={props.pdf3d} />
+        )}
+        {(alert?.warning.length ?? 0) > 0 && (
+          <CanvasAlertNotice tone="warning" messages={alert?.warning ?? []} />
+        )}
+        {(alert?.error.length ?? 0) > 0 && (
+          <CanvasAlertNotice tone="error" messages={alert?.error ?? []} />
         )}
       </>
     ) : undefined;
@@ -856,6 +886,11 @@ export function App(): ReactElement {
   const [panelRightWidth, setPanelRightWidth] = useState<number>(
     (): number => resolvePanelWidth("right", undefined),
   );
+  // TFL-1455 (TFL-1415 chunk B) — which side-panel separator is mid-drag, or
+  // null at rest. While set, `.app-main[data-panel-resizing]` suppresses the
+  // `.workspace` / `.workspace-main` / `.inspector` layout transitions so the
+  // panel edge tracks the pointer 1:1 instead of easing toward each frame.
+  const [panelResizing, setPanelResizing] = useState<"left" | "right" | null>(null);
   // Phase 111 (chunk D1) — the Split Navigator's persisted layout + ratio. App
   // owns the live values; the panel reports a settled change (layout-menu
   // selection / divider gesture settle) and App persists it through the shared
@@ -876,7 +911,11 @@ export function App(): ReactElement {
   const [splitFraction, setSplitFraction] = useState(0.5);
   const [tabs, dispatchTabs] = useReducer(tabsReducer, initialTabsState);
   const [openTabs, setOpenTabs] = useState<Record<string, OpenTab>>({});
-  const [errorState, dispatchError] = useReducer(errorReducer, { toasts: [], nextId: 1 });
+  const [errorState, dispatchError] = useReducer(errorReducer, {
+    toasts: [],
+    alerts: { warning: [], error: [] },
+    nextId: 1,
+  });
   const [diagnostics, setDiagnostics] = useState<Record<string, unknown>>({});
   const [sampleCount, setSampleCount] = useState(0);
   // Per-tab UI state (engine state + undo/redo flags). Kept separate from
@@ -901,12 +940,6 @@ export function App(): ReactElement {
   // Phase 4 — signature manager modal + flatten confirm
   const [sigModalOpen, setSigModalOpen] = useState(false);
   const [flattenOpen, setFlattenOpen] = useState(false);
-  const [formsPanelOpen, setFormsPanelOpen] = useState(false);
-  // Phase 115 E — the field whose control has focus, shared between the Guided
-  // Fill panel and the canvas so each highlights the other. HIGHLIGHT ONLY:
-  // nothing here moves DOM focus, so focus can never cycle.
-  const [formFocusFieldId, setFormFocusFieldId] = useState<string | null>(null);
-  const formPanelReturnFocusRef = useRef<HTMLElement | null>(null);
   // Phase 36 (chunk 6) — the LIVE text-object selection published by the
   // active DocumentView (the edit model's selected box, or the text-run
   // target the panel edits). The Inspector's EDIT/text section reads it;
@@ -1978,11 +2011,33 @@ export function App(): ReactElement {
     });
   }, [trackAndSave, setTheme]);
 
-  // Phase 105 (chunk C) — the borderless 4-option theme picker is RETIRED
-  // from the title row; the application menu's "Toggle Theme" row (the
-  // existing `toggleTheme` action) is the title-row route, and the Preferences
-  // sheet keeps its own themed picker. `onToggleTheme` above is the single
-  // cycle handler both the menu row and the accelerator use.
+  // Phase 127 (v1.50.0 restore) — the title-row theme dropdown's committed
+  // pick. Mirrors the restored v1.50.0 handler: the resolved concrete theme is
+  // applied live and the picked option is recorded as `themeDefault` so the
+  // pill shows the right entry after a restart. Persists through the same
+  // trackAndSave path as onToggleTheme, with the same null-guard.
+  const onThemeChange = useCallback((next: ThemeDefault): void => {
+    const concrete = resolveThemeDefault(
+      next,
+      window.matchMedia("(prefers-color-scheme: dark)").matches,
+    );
+    setSettings((prev) => {
+      if (prev === null) return prev;
+      // No-op guard: the pick resolves to the theme already showing AND the
+      // selection hasn't moved. `themeDefault` falls back to the concrete theme
+      // when unset — the same fallback the pill uses.
+      if (concrete === prev.theme && (prev.themeDefault ?? prev.theme) === next) return prev;
+      const updated: AppSettings = { ...prev, theme: concrete, themeDefault: next };
+      setTheme(concrete);
+      trackAndSave(updated);
+      return updated;
+    });
+  }, [trackAndSave, setTheme]);
+
+  // Phase 127 (v1.50.0 restore) — the borderless 4-option theme picker is
+  // restored to the title row as a labelled dropdown (`onThemeChange` above is
+  // its commit handler); the application menu's "Toggle Theme" row and the
+  // Preferences sheet keep their own themed controls.
 
   // Phase 16 — collapse / expand the side-rail pages panel. App owns
   // the value and persists it through the same trackAndSave path as
@@ -2047,7 +2102,7 @@ export function App(): ReactElement {
     setInspectorDrawerOpen(false);
   }, []);
 
-  const pushToast = useCallback((kind: Toast["kind"], text: string): void => {
+  const pushToast = useCallback((kind: ToastKind, text: string): void => {
     dispatchError({ type: "push", toast: { kind, text } });
   }, []);
   const dismissToast = useCallback((id: number): void => {
@@ -9820,8 +9875,6 @@ pushToast(
         armedSignatureId: string | null;
         onFormValueChange: (id: string, value: string | string[]) => void;
         onFormListboxToggle: (id: string, option: string) => void;
-        focusedFieldId: string | null;
-        onFieldFocus: (id: string) => void;
         onPlaceSignature: (signatureId: string, page: number, rect: SignaturePlacement["rect"]) => void;
         onMoveSignature: (placementId: string, rect: SignaturePlacement["rect"]) => void;
         onDeleteSignature: (placementId: string) => void;
@@ -9844,8 +9897,7 @@ pushToast(
         cached.formFields === formFields &&
         cached.signatures === signatures &&
         cached.savedSignatures === savedSignatures &&
-        cached.armedSignatureId === armedSignatureId &&
-        cached.focusedFieldId === formFocusFieldId
+        cached.armedSignatureId === armedSignatureId
       ) {
         return cached;
       }
@@ -9859,10 +9911,6 @@ pushToast(
         },
         onFormListboxToggle: (id: string, option: string): void => {
           onFormListboxToggle(tabId, id, option);
-        },
-        focusedFieldId: formFocusFieldId,
-        onFieldFocus: (id: string): void => {
-          setFormFocusFieldId(id);
         },
         onPlaceSignature: (signatureId: string, page: number, rect: SignaturePlacement["rect"]): void => {
           void placeSignatureFull(tabId, signatureId, page, rect);
@@ -9889,7 +9937,6 @@ pushToast(
     openTabs,
     savedSignatures,
     armedSignatureId,
-    formFocusFieldId,
     onFormValueChange,
     onFormListboxToggle,
     placeSignatureFull,
@@ -10659,19 +10706,6 @@ pushToast(
     [menuGroups, commandSurface],
   );
 
-  // Phase 105 (chunk C) — the File trigger and the application menu consume
-  // DISJOINT slices of the same audited group list. The File popover keeps the
-  // File group only; the application menu takes Edit / View / Tools / Help.
-  // No group, row, label or action id is added, removed or renamed.
-  const fileMenuGroups = useMemo<MenuGroup[]>(
-    () => filteredMenuGroups.filter((g) => g.id === "file"),
-    [filteredMenuGroups],
-  );
-  const appMenuGroups = useMemo<MenuGroup[]>(
-    () => filteredMenuGroups.filter((g) => g.id !== "file"),
-    [filteredMenuGroups],
-  );
-
   /** True when the active tab is an empty placeholder (no document).
    *  The renderer mounts the Welcome screen instead of a DocumentView
    *  so the user has somewhere to drop a PDF. */
@@ -10823,6 +10857,21 @@ pushToast(
   }, []);
   const onPanelRightResize = useCallback((next: number): void => {
     setPanelRightWidth(clampPanelWidth("right", next));
+  }, []);
+  // TFL-1455 — gesture lifecycle. Start marks which separator owns the drag;
+  // end clears only if this side still owns it (so a stale end can never clear
+  // the other side's in-flight gesture).
+  const onPanelLeftGestureStart = useCallback((): void => {
+    setPanelResizing("left");
+  }, []);
+  const onPanelLeftGestureEnd = useCallback((): void => {
+    setPanelResizing((prev) => (prev === "left" ? null : prev));
+  }, []);
+  const onPanelRightGestureStart = useCallback((): void => {
+    setPanelResizing("right");
+  }, []);
+  const onPanelRightGestureEnd = useCallback((): void => {
+    setPanelResizing((prev) => (prev === "right" ? null : prev));
   }, []);
   const commitPanelLeftWidth = useCallback(
     (next: number): void => {
@@ -11549,14 +11598,6 @@ pushToast(
         }
         if (editModeOpenRef.current) setEditMode(false);
         setSigModalOpen(true);
-      },
-      forms: (): void => {
-        // Phase 115 E — capture the opener so closing (Escape included) can
-        // return focus there, and reset the shared focus link.
-        const active = document.activeElement;
-        formPanelReturnFocusRef.current = active instanceof HTMLElement ? active : null;
-        setFormFocusFieldId(null);
-        setFormsPanelOpen(true);
       },
       flatten: (): void => setFlattenOpen(true),
       stamp: onStampClick,
@@ -12361,21 +12402,22 @@ pushToast(
        * parallax controller writes --tf-parallax-* here. */}
       <div className="tf-ambient" ref={ambientLayerRef} aria-hidden />
       <TitleBar
-        menuGroups={fileMenuGroups}
+        menuGroups={filteredMenuGroups}
         menuContext={menuContext}
         maximized={isMaximized}
       >
         <AppHeader
           activeId={stripActiveId}
-          // Phase 105 (chunk C) — the application menu's groups (Edit / View /
-          // Tools / Help) and the dispatcher context its id-backed rows run
-          // through. The relocated Multi Mode / Find rows call their handlers
-          // directly, exactly like the icon controls they replace.
-          appMenuGroups={appMenuGroups}
-          menuContext={menuContext}
+          // Phase 127 (v1.50.0 restore) — the title-row utility cluster owns
+          // the Multi Mode toggle, Find, the settings gear and the theme
+          // dropdown again; the File trigger above now carries every menu group.
           onMultiModeToggle={onMultiModeToggle}
+          multiModeEnabled={multiMode.enabled}
           onOpenFind={activeTabHasDocument ? openFindInDocument : undefined}
           findEnabled={activeTabHasDocument}
+          onOpenPreferences={(): void => setPrefsOpen(true)}
+          themeDefault={settings.themeDefault ?? settings.theme}
+          onThemeChange={onThemeChange}
           commandSurface={commandSurface}
           // Phase 30 — the Print icon. Phase 40 (item 5) — Ctrl+K Search tools.
           onPrint={openPrintWindow}
@@ -12477,28 +12519,39 @@ pushToast(
         // Phase 37 (item 8) — true on the welcome/home screen. Drops the
         // rail's track (Phase 108 Workspace Rail: --tf-stage-rail-w, 72px)
         // and lets the stage span the full frame.
+        // TFL-1455 (TFL-1415 chunk B) — true while a separator drag is live;
+        // suppresses the layout transitions so the edge tracks the pointer.
+        data-panel-resizing={panelResizing ?? undefined}
         data-stage-rail-hidden={stageRailVisible ? "false" : "true"}
       >
         {/* Phase 112 (TFL-854, chunk H) — the resizable panel separators. The
             LEFT handle exists only while the navigator is expanded (Multi Mode
             draws its own per-pane strips instead); the RIGHT handle only while
             the inspector is expanded. Both edit the SAME App state the panels
-            read, so a drag, a key press and a settings echo all agree. */}
+            read, so a drag, a key press and a settings echo all agree. TFL-1455
+            passes the composition-CLAMPED effective widths (railWidthPx /
+            toolsWidthPx) as the drag basis so the pointer delta maps to the
+            RENDERED edge, and wires the gesture lifecycle that suppresses the
+            layout transitions during the drag. */}
         {stageRailVisible && !railCollapsedEffective && !multiMode.enabled && (
           <PanelResizeHandle
             side="left"
-            width={panelLeftWidth}
+            width={railWidthPx}
             onResize={onPanelLeftResize}
             onCommit={commitPanelLeftWidth}
+            onGestureStart={onPanelLeftGestureStart}
+            onGestureEnd={onPanelLeftGestureEnd}
             data-testid="panel-resize-left"
           />
         )}
         {inspectorReserveOpen && !inspectorCollapsedSurface && (
           <PanelResizeHandle
             side="right"
-            width={panelRightWidth}
+            width={toolsWidthPx}
             onResize={onPanelRightResize}
             onCommit={commitPanelRightWidth}
+            onGestureStart={onPanelRightGestureStart}
+            onGestureEnd={onPanelRightGestureEnd}
             data-testid="panel-resize-right"
           />
         )}
@@ -12527,6 +12580,22 @@ pushToast(
           showWelcome={showWelcomeEffective}
           welcomeKey={tabs.activeId ?? 'welcome'}
           welcome={
+            <>
+              {/* Phase 126 (chunk B1) — there is no canvas on Home, so the same
+                  in-canvas alert notices render beside the welcome hero. A
+                  warning/error message is never lost. */}
+              {errorState.alerts.warning.length > 0 && (
+                <CanvasAlertNotice
+                  tone="warning"
+                  messages={errorState.alerts.warning}
+                />
+              )}
+              {errorState.alerts.error.length > 0 && (
+                <CanvasAlertNotice
+                  tone="error"
+                  messages={errorState.alerts.error}
+                />
+              )}
             <Welcome
               recentFiles={recentDisplays}
               onOpenRecent={onRecentClick}
@@ -12576,6 +12645,7 @@ pushToast(
               // TFL-1143 (R09) — sample fixtures render only in a dev build.
               showSamples={isDevelopmentBuild()}
             />
+            </>
           }
           multiMode={multiMode}
           splitFraction={splitFraction}
@@ -12891,8 +12961,6 @@ pushToast(
                     formFields={fs.formFields}
                     onFormValueChange={fs.onFormValueChange}
                     onFormListboxToggle={fs.onFormListboxToggle}
-                    focusedFieldId={fs.focusedFieldId}
-                    onFieldFocus={fs.onFieldFocus}
                     signatures={fs.signatures}
                     savedSignatures={fs.savedSignatures}
                     // Phase 90 (TFL-509-C1) — the unified review list's
@@ -13113,12 +13181,21 @@ pushToast(
             const tabEngineDocId = openTabs[meta.id]?.session.engineDocId;
             const pdf3d =
               tabEngineDocId !== undefined ? content3dByDoc[tabEngineDocId] ?? [] : [];
+            // Phase 126 (chunk B1) — the active tab's warning/error messages.
+            // Gated to the ACTIVE tab so the notice mounts once inside the
+            // active canvas, never once per Multi Mode pane.
+            const alert =
+              meta.id === tabs.activeId ? errorState.alerts : undefined;
+            const alertHasMessages =
+              alert !== undefined &&
+              (alert.warning.length > 0 || alert.error.length > 0);
             if (
               protection === undefined &&
               conversion === undefined &&
               validation === undefined &&
               sourceFormat === undefined &&
-              pdf3d.length === 0
+              pdf3d.length === 0 &&
+              !alertHasMessages
             ) {
               return document;
             }
@@ -13130,6 +13207,7 @@ pushToast(
                 validation={validation}
                 protection={protection}
                 pdf3d={pdf3d}
+                alert={alert}
                 onDismissConversion={(): void =>
                   setConvertNotices((prev) => {
                     if (!(meta.id in prev)) return prev;
@@ -13419,29 +13497,6 @@ pushToast(
           void onFlattenConfirm();
         }}
       />
-      {formsPanelOpen && activeTab !== null ? (
-        <div className="guided-fill-panel-host">
-          <GuidedFillPanel
-            key={activeEngineDocId ?? "none"}
-            fields={activeTab.forms.fields}
-            currentPage={Math.max(1, Math.floor(activeTab.persisted.currentPage ?? 1))}
-            totalPages={activeEngineUi?.state.pageCount ?? activeTab.session.doc.numPages}
-            onValueChange={(id, v): void => {
-              if (tabs.activeId !== null) onFormValueChange(tabs.activeId, id, v);
-            }}
-            onToggleListbox={(id, opt): void => {
-              if (tabs.activeId !== null) onFormListboxToggle(tabs.activeId, id, opt);
-            }}
-            focusedFieldId={formFocusFieldId}
-            onFieldFocus={(id): void => setFormFocusFieldId(id)}
-            onClose={(): void => {
-              setFormsPanelOpen(false);
-              setFormFocusFieldId(null);
-              formPanelReturnFocusRef.current?.focus();
-            }}
-          />
-        </div>
-      ) : null}
       <OptimizeDialog
         open={optimizeOpen}
         initialPreset={settings.optimizePreset ?? DEFAULT_OPTIMIZE_PRESET}

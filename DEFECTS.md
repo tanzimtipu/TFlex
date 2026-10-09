@@ -5,6 +5,39 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-665: The navigator separator's panel edge trails the pointer during a drag (panel-resize trail)
+
+- Status: CLOSED
+- Severity: MEDIUM - the visible navigator edge lags the pointer/handle while dragging the separator (measured up to 9.5px mid-drag; the tracking contract is <= 4px), so the resize affordance visibly trails the cursor; it self-corrects to 0px on release, so there is no functional or data impact. The lag grows with drag speed.
+- Found by: operator (relayed as TFL-1414 "Panel resize bug"; TFL-1423 "Panel resize trail" folded in as duplicate)
+- Phase: shell panel resize (Phase 112 surface; reproduced on the current v1.52.1 dev build)
+
+Files:
+- `src/renderer/App.tsx:12487-12495` - the left `PanelResizeHandle` is a SIBLING of `.workspace` inside `.app-main`; it is positioned from `left: calc(var(--tf-stage-rail-w) + var(--tf-rail-w))`.
+- `src/renderer/styles.css:4980-4981` - `.workspace` declares `grid-template-columns: var(--tf-rail-w) 1fr;` with `transition: --tf-rail-w var(--motion-duration-panel) var(--motion-ease-layout);` (140ms), so the navigator COLUMN tweens when the token changes.
+- `src/renderer/styles.css:5093-5096` - the left handle's `left` consumes the SAME registered `--tf-rail-w` token, but `.panel-resize-handle` declares only `transition: background ...` (styles.css:5089-5091), so the handle jumps to the new value instantly while the panel column is still animating. During the 140ms tween the panel edge lags the handle/pointer -> the trail. The right handle/inspector does not reproduce (see Scope finding).
+- `src/renderer/components/panels/PanelResizeHandle.tsx:203-264` - `widthAt` + the rAF-coalesced `onPointerMove` drive the live width; the handle and the panel read the same App state, so the split is a CSS transition scope issue, not a state issue.
+
+Steps to reproduce:
+1. Launch the TFlex dev build and open `report.pdf`.
+2. Open a SECOND document tab: click the "+" (`[data-new-tab]`), open `form.pdf`, then re-focus the first tab.
+3. Resize the window to 1440x900.
+4. Pointer-drag the left navigator separator (`[data-panel-resize="left"]`): move to the handle centre, press, then ~10 moves of +12px with a short (~50ms) settle between steps; at each step sample `document.querySelector('.context-panel').getBoundingClientRect().right` and the handle bounding-box centre x.
+5. Repeat identically on the right separator (`[data-panel-resize="right"]`), sampling `.inspector` `getBoundingClientRect().left` vs the right handle centre x.
+
+Expected: the panel edge tracks the handle/pointer within 4px throughout the drag (settled delta 0px).
+
+Actual: the left navigator edge trails the handle mid-drag by up to 9.5px (per-step deltas 9.5, 6.53, 3.52, 6.16, 5.88, 9.48, 3.45, 3.27, 3.27, 3.25px), settling to 0px after release. The right inspector separator tracks exactly (max delta 0px at every step).
+
+Scope finding: ISOLATED to the LEFT navigator separator, not systemic, and NOT specific to multiple tabs. The right inspector separator tracked exactly in every state where it mounts (page view 1 tab and 2 tabs, Multi Mode). Handles are absent on Home welcome and Book View, and the left handle is absent in Multi Mode, so no drag is possible there. The left trail reproduces with 1 tab too (max delta 6.36px one-page, 4.83px two-page, 2.70px four-page on the short probe), so multiple tabs is not the trigger; the trigger is the left token's 140ms column transition versus the instant handle position.
+
+Evidence: `e2e/tfl1415_panel_resize_tracking.spec.cjs` (acceptance RED: LEFT max 9.5px > 4px; RIGHT max 0px), screenshots `screenshots/tfl1415_left_drag_start.png`, `screenshots/tfl1415_left_drag_mid.png`, `screenshots/tfl1415_left_drag_end.png`, `screenshots/tfl1415_right_drag_start.png`, `screenshots/tfl1415_right_drag_mid.png`, `screenshots/tfl1415_right_drag_end.png`.
+
+History:
+- qa: filed 2026-10-09 from bug-hunt TFL-1454 (chunk A of TFL-1415). Regression spec added; deltas measured at 1440x900 with 2 tabs. Owner role: frontend-dev.
+- frontend-dev: fix landed 2026-10-09 in TFL-1455 (chunk B): drag-scoped `data-panel-resizing` transition suppression in `styles.css`, gesture callbacks in `PanelResizeHandle.tsx`, and clamped effective-width drag basis in `App.tsx`. Developer reports LEFT/RIGHT maxDelta=0 on the named spec. CTO set FIX-READY pending qa phase-close verification (chunk C).
+- qa: CLOSED 2026-10-09 (TFL-1474, chunk C). Retested by qa under the build lock; `npm.cmd run test:e2e -- e2e/tfl1415_panel_resize_tracking.spec.cjs` -> 2 passed (36.8s), acceptance LEFT maxDelta=0px, RIGHT maxDelta=0px (budget 4px), both drags ENGAGED (left 240->360, right 380->260). Focused unit `test/unit/renderer/phase112_panelLayout.test.tsx` -> 1 file / 19 tests passed. `npm.cmd run verify` -> conventions clean + typecheck clean (exit 0). Source confirmed: `styles.css:5147-5151` suppresses transitions only under `.app-main[data-panel-resizing]`; `PanelResizeHandle.tsx` fires `onGestureStart` on pointerdown (243) and `onGestureEnd` on pointerup/pointercancel (281/312) plus unmount cleanup (215-219); `App.tsx` sets `data-panel-resizing` (12479) and feeds composition-clamped `railWidthPx`/`toolsWidthPx` as the drag basis (12494/12505).
+
 ## DEF-664: The dock EDIT-mode red minus (remove) badge turns invisible under the pointer on hover
 
 - Status: CLOSED

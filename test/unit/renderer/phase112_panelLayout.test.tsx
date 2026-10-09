@@ -254,3 +254,49 @@ describe("phase112 panelLayout — App wiring", () => {
     expect(APP_SOURCE).toContain('side="right"');
   });
 });
+
+describe("phase112 panelLayout — TFL-1455 resize-gesture wiring", () => {
+  it("fires onGestureStart on pointerdown and onGestureEnd on pointerup", () => {
+    const started: number[] = [];
+    const ended: number[] = [];
+    const { host, unmount } = mount(
+      createElement(PanelResizeHandle, {
+        side: "left",
+        width: 240,
+        onResize: (): void => undefined,
+        onCommit: (): void => undefined,
+        onGestureStart: (): void => {
+          started.push(1);
+        },
+        onGestureEnd: (): void => {
+          ended.push(1);
+        },
+      }),
+    );
+    const handle = host.querySelector<HTMLElement>("[data-panel-resize='left']");
+    expect(handle).not.toBeNull();
+    const pointer = (type: string): void => {
+      act((): void => {
+        handle?.dispatchEvent(
+          new MouseEvent(type, { bubbles: true, button: 0, clientX: 300, clientY: 100 }),
+        );
+      });
+    };
+    pointer("pointerdown");
+    expect(started).toHaveLength(1);
+    expect(ended).toHaveLength(0);
+    pointer("pointerup");
+    expect(ended).toHaveLength(1);
+    unmount();
+  });
+
+  it("sets data-panel-resizing and wires the gesture callbacks with the effective widths", () => {
+    expect(APP_SOURCE).toContain("data-panel-resizing={panelResizing ?? undefined}");
+    expect(APP_SOURCE).toContain("onGestureStart={onPanelLeftGestureStart}");
+    expect(APP_SOURCE).toContain("onGestureEnd={onPanelLeftGestureEnd}");
+    expect(APP_SOURCE).toContain("onGestureStart={onPanelRightGestureStart}");
+    expect(APP_SOURCE).toContain("onGestureEnd={onPanelRightGestureEnd}");
+    expect(APP_SOURCE).toContain("width={railWidthPx}");
+    expect(APP_SOURCE).toContain("width={toolsWidthPx}");
+  });
+});
