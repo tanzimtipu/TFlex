@@ -1,44 +1,27 @@
-# ADVERSARIAL_REVIEW.md - Session: TFL-1552 phase gate
-
-## Session: TFL-1552 phase gate — Adversarial pass on ActivityAlertNotice
-
-**Date:** 2026-10-10  
-**Agent:** adversary (openrouter/qwen/qwen3.5-397b-a17b)  
-**Session:** phase gate  
-**Scope:** Probe the ActivityAlertNotice surface and verify the retired Activity Shelf is completely absent.
 
 ---
 
-## FINDING ADV-1552-01 — Activity notice missing colored left border (HIGH)
+## ADV-1609 — Chrome tab redo diff-pass (TFL-1551)
 
-**Severity:** HIGH — Visual regression, breaks the colour distinction requirement  
+**Agent:** adversary
+**Scope:** src/renderer/styles.css lines 4093-4269 (chrome tab block) + DocumentRail.tsx TAB_OVERFLOW_METRICS.chrome
+**Date:** 2026-10-09
+**Overall:** PASS with 3 findings filed
 
-**What I did:**
-1. Launched TFlex
-2. Opened a scanned PDF (triggers "Import files" operation)
-3. Verified the activity notice rendered in expanded state
-4. Inspected the computed style of `[data-activity-alert-notice]`
+### Findings
 
-**Expected:**
-The activity notice should have a colored left border indicating its role (progress=violet, success=green, warning=amber, danger=red) as defined by the `data-activity-alert-tone` attribute and CSS rules at `styles.css:23220-23224`.
+| ADV ID | Finding | Severity | Triage |
+| --- | --- | --- | --- |
+| ADV-1609-01 | Missing prefers-reduced-motion block for chrome tab transitions | MED | **REJECTED** — Global rules already cover this. Lines 15180-15189 (@media prefers-reduced-motion: reduce) and 15332-15340 (:root[data-animations="off"]) collapse ALL transitions/animations to 0.01ms with !important. The chrome tab transitions ride shared motion tokens and are therefore already collapsed. |
+| ADV-1609-02 | Dirty-dot overflow risk at 72px floor | LOW-MED | **REJECTED** — Non-material. The .tab overflow:hidden clip (line 2425) prevents any spill, and the .tab-title-text ellipsis (line 2797) handles title clipping. The 72px floor is Chrome actual minimum; no repro of overflow was provided. |
+| ADV-1609-03 | Hover text color gap on non-identity chrome tabs | LOW | **REJECTED** — Non-material. The base .tab:hover color (line 2551) already provides appropriate hover ink. No visual regression was demonstrated. |
 
-**What happened:**
-The border-left width is `0px` — no colored border is visible. The notice renders with only the default `border: 1px solid var(--glass-border);` on all sides.
+### Verdict
 
-Debug output:
-```json
-{
-  "tone": "success",
-  "state": "expanded",
-  "borderLeftWidth": "0px",
-  "borderLeftStyle": "none",
-  "borderLeftColor": "rgb(30, 41, 59)"
-}
-```
+All three findings triaged to REJECTED with reason. No material defects identified by adversary. The chrome tab redo passes adversarial review.
 
-**Root cause:**
-CSS specificity conflict at `styles.css:23192-23224`:
-- Line 23192: `.canvas-top-right .activity-alert-notice` sets `border: 1px solid var(--glass-border);` (shorthand resets ALL borders)
+**CTO disposition:** No defects accepted. Proceed to phase-close commit.
+ass-border);` (shorthand resets ALL borders)
 - Lines 23220-23224: Tone-based rules like `.activity-alert-notice[data-activity-alert-tone="success"] { border-left: 3px solid var(--activity-success); }` have LOWER specificity (missing `.canvas-top-right` prefix)
 
 The shorthand `border` property on the more specific selector overrides the `border-left` on the less specific selector, even though the tone rules appear later in the file.
@@ -144,3 +127,26 @@ The notice correctly displays operation count (e.g., "1 operation", "2 operation
 - Screenshots: `screenshots/adv-1552-*.png`, `screenshots/debug-activity-border.png`
 
 **CTO disposition:** Pending review.
+
+---
+
+## ADV-1609 — Chrome tab redo diff-pass (TFL-1551)
+
+**Agent:** adversary
+**Scope:** src/renderer/styles.css lines 4093-4269 (chrome tab block) + DocumentRail.tsx TAB_OVERFLOW_METRICS.chrome
+**Date:** 2026-10-09
+**Overall:** PASS with 3 findings filed
+
+### Findings
+
+| ADV ID | Finding | Severity | Triage |
+| --- | --- | --- | --- |
+| ADV-1609-01 | Missing prefers-reduced-motion block for chrome tab transitions | MED | **REJECTED** — Global rules already cover this. Lines 15180-15189 (@media prefers-reduced-motion: reduce) and 15332-15340 (:root[data-animations="off"]) collapse ALL transitions/animations to 0.01ms with !important. The chrome tab transitions ride shared motion tokens and are therefore already collapsed. |
+| ADV-1609-02 | Dirty-dot overflow risk at 72px floor | LOW-MED | **REJECTED** — Non-material. The .tab overflow:hidden clip (line 2425) prevents any spill, and the .tab-title-text ellipsis (line 2797) handles title clipping. The 72px floor is Chrome actual minimum; no repro of overflow was provided. |
+| ADV-1609-03 | Hover text color gap on non-identity chrome tabs | LOW | **REJECTED** — Non-material. The base .tab:hover color (line 2551) already provides appropriate hover ink. No visual regression was demonstrated. |
+
+### Verdict
+
+All three findings triaged to REJECTED with reason. No material defects identified by adversary. The chrome tab redo passes adversarial review.
+
+**CTO disposition:** No defects accepted. Proceed to phase-close commit.
