@@ -24,7 +24,7 @@ verified by reading the file in this repo.
 
 | Surface | file:line | Trigger/handler | Current state model | Data source (store / IPC / engine event) | Capability predicate | Async state transitions | Existing test | Class |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| Toasts | `src/renderer/components/Toasts.tsx:13-17` (Toast type), `:35` (`toastAutoDismissMs`) | `pushToast(kind, text)` (`App.tsx:1877`); user Dismiss / X | `AppErrorState.toasts: Toast[]` + `nextId`, reducer `App.tsx:492-509`; `ToastItem` auto-dismisses only `success` / `info` after 5000 ms via `toastAutoDismissMs` (`warning` / `error` persist until acknowledged) | Local reducer only; no IPC, no engine event | Dismiss only; no cancel, no result action | push -> visible -> (success/info: auto 5 s or manual; warning/error: manual only) dismiss -> removed | `test/unit/renderer/toastKinds.test.tsx` | SUPPORTED (transient notice; error/warning durable until acknowledged, not a cancellable operation) |
+| Toasts | `src/renderer/components/Toasts.tsx:19-23` (rendered `Toast` type), `:13` (`ToastKind` input union), `:38` (`toastAutoDismissMs`) | `pushToast(kind, text)` (`App.tsx:2082`); user Dismiss / X | `AppErrorState.toasts: Toast[]` + `nextId`, reducer `App.tsx:543-561`; Phase 126 routes `warning` / `error` into `AppErrorState.alerts` (rendered as the in-canvas `CanvasAlertNotice`), so only `info` / `success` reach the stack and `ToastItem` auto-dismisses them after 5000 ms via `toastAutoDismissMs` | Local reducer only; no IPC, no engine event | Dismiss only; no cancel, no result action | push -> visible -> (success/info: auto 5 s or manual) dismiss -> removed | `test/unit/renderer/toastKinds.test.tsx`, `phase126CanvasAlertRouting.test.tsx` | SUPPORTED (transient notice; not a cancellable operation) |
 | ConversionNotice card | `src/renderer/components/ConversionNotice.tsx:38-133` | `onOpened` after a successful `convert:toDocument` | `ConvertNoticeState` (`src/renderer/state/convert.ts:34-40`): sourceLabel, sourceFormat, fidelity, warnings[] | `ConvertOpenResult` from `convert:toDocument` (`src/shared/ipc.ts:430`) | None; shown unconditionally on success | Shown; collapse/expand via `useNoticeCollapse`; stays available | `test/unit/renderer/phase53_convertImport.test.tsx` | EXTENDABLE (terminal result notice; maps to `completed` + `view-details`) |
 | ConversionProgress | `src/renderer/components/ConversionNotice.tsx:135-185` | Auto while `runConvertOpen` is in flight; Cancel button `:173-182` | `ConvertProgressState` (`convert.ts:43-49`): docId, phase, optional `ratio` | `convert:progress` push (`src/shared/ipc.ts:440`) + `ConvertProgress` (`src/shared/convert.ts:216-221`) | Cancel: `convert.cancel` (`ipc.ts:439`) exists and is wired | start (phase, optional ratio) -> cancel requested -> opened / cancelled / error; cancelled is quiet (`convert.ts:225`) | `test/unit/renderer/phase53_convertImport.test.tsx` | SUPPORTED (determinate only when a real ratio exists; no ETA) |
 | UpdateIndicator | `src/renderer/components/UpdateIndicator.tsx:26-291` | Backend push via `update.onStatusChanged`; click routes download / install / retry | `UpdateState` (`src/shared/types.ts:363-370`); pure `indicatorView` `:37-86` | Updater IPC: `update.getStatus` / `check` / `download` / `install` / `onStatusChanged` | `download`, `install`, `check` present on the bridge | unsupported / checking / up-to-date / available / downloading / downloaded / error | `test/unit/renderer/updateIndicator.test.tsx`, `bug016_updateDialogProgress.test.tsx` | EXTENDABLE (downloading exposes a percent; no cancel of a download) |
@@ -83,7 +83,12 @@ Related shared types: `UpdateState` (`src/shared/types.ts:363-370`), `OcrProgres
 
 ## Notes and out-of-scope findings (recorded only; not fixed in this chunk)
 
-- Toasts: C5c made durability kind-aware — `success` / `info` auto-dismiss after 5 s, while `error` / `warning` now persist until the user clicks Dismiss (the pure `toastAutoDismissMs` helper in `Toasts.tsx`; `null` means persist). An error toast can no longer vanish before it is read (`Toasts.tsx:35`).
+- Toasts: Phase 126 (TFL-1400) retires the `warning` / `error` toast surface —
+  those tones now render as the in-canvas `CanvasAlertNotice` (routed by
+  `errorReducer` into `AppErrorState.alerts`), so only `success` / `info` toasts
+  remain and they auto-dismiss after 5 s via the pure `toastAutoDismissMs`
+  helper in `Toasts.tsx` (`Toasts.tsx:38`). An error can no longer vanish before
+  it is read because it is no longer a transient toast at all.
 - UpdateIndicator `downloading` renders `{progress}%` (`UpdateIndicator.tsx:250`) — the only percentage in a progress surface.
 - OcrDialog and PrintPanel each own a copy of the same progress markup (`ocr-progress-*` classes); the shelf will consolidate, but no shared component was built in this chunk.
 - The search-index counts were diagnostics-only in C1 (`App.tsx`); C5b now also maps them onto a shelf operation (`searchIndexStartAction` / `searchIndexProgressAction`) so the build is visible outside diagnostics. The App diagnostics mirror is unchanged.
@@ -130,9 +135,10 @@ Terminal document-attached notices stay document-attached, not shelf rows:
 Passive / review / position surfaces are not async operations and stay in place:
 `ProtectionNotice`, `Pdf3dNotice`, `OcrSuspectsPanel`, `BookView` / `ReadingView`.
 
-Toast durability (C5c): `error` and `warning` toasts now persist until the user
-acknowledges them; only `success` / `info` auto-dismiss after 5 s. See
-`src/renderer/components/Toasts.tsx` (`toastAutoDismissMs`).
+Toast durability: Phase 126 (TFL-1400) retired the `error` / `warning` toasts
+(routed into the in-canvas `CanvasAlertNotice`), so only `success` / `info`
+auto-dismiss after 5 s. See `src/renderer/components/Toasts.tsx`
+(`toastAutoDismissMs`, `:38`).
 
 ## TFL-1216 chunk C7 — live update lifecycle on the shelf
 
@@ -176,9 +182,11 @@ categories still consume. Pinned by `test/unit/renderer/foundationMirrors.test.t
 
 Accessibility hardening (repairs only; no redesign):
 
-- Failures are assertive: a `failed` row's reason and a `partial-success` row's
-  failed-items list now carries `role="alert"`, so actionable failures announce.
-  The collapsed summary stays `role="status" aria-live="polite"`.
+- Failures now surface as the in-canvas `CanvasAlertNotice` (Phase 126 chunk B2):
+  a settled `failed` / `partial-success` operation's message is routed into the
+  error / warning canvas alert by `terminalAlertFor`, so the shelf no longer
+  renders an assertive failure block (no `role="alert"` reason / failed-items
+  list remains). The collapsed summary stays `role="status" aria-live="polite"`.
 - The summary's determinate counter ("4 of 12 pages") stays visible but is
   removed from the accessibility tree, so the polite region announces stage /
   completion changes and never each progress point; the model has no percentage

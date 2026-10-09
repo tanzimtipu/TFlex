@@ -24567,33 +24567,6 @@ cursor: pointer;
   to { transform: translateX(250%); }
 }
 
-/* ---- Failure detail --------------------------------------------------- */
-.activity-shelf-failed {
-  list-style: none;
-  margin: var(--sp-1) 0 0;
-  padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.activity-shelf-failed-item {
-  display: flex;
-  gap: var(--sp-2);
-  font-size: var(--type-helper-size);
-  line-height: var(--type-helper-line);
-  color: var(--fg-muted);
-}
-
-.activity-shelf-failed-name { color: var(--fg-strong); }
-
-.activity-shelf-failure-reason {
-  margin: var(--sp-1) 0 0;
-  font-size: var(--type-helper-size);
-  line-height: var(--type-helper-line);
-  color: var(--activity-danger);
-}
-
 /* ---- Reduced motion --------------------------------------------------- */
 @media (prefers-reduced-motion: reduce) {
   .activity-shelf-row,

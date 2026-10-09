@@ -41,7 +41,7 @@ import type { OcrProgress, UpdateState } from '../../shared/types';
 import type { SearchIndexProgress } from '../components/DocumentView';
 
 /** How long a successful notice stays visible before it auto-dismisses. A
- *  `failed` notice never expires on its own. The UI freezes `nowMs` while the
+ *  `cancelled` notice never expires on its own. The UI freezes `nowMs` while the
  *  shelf is hovered or focused, which pauses dismissal by construction. */
 export const SUCCESS_NOTICE_AUTO_DISMISS_MS = 8000;
 
@@ -206,11 +206,13 @@ export function selectActivitySummary(state: ActivityShelfState): ActivitySummar
 }
 
 /**
- * Terminal notices the shelf should show: terminal operations that have not
- * been acknowledged. A `completed`/`partial-success` notice auto-dismisses
- * once `nowMs` is at least `SUCCESS_NOTICE_AUTO_DISMISS_MS` past the time it
- * settled; `failed` (and `cancelled`) never auto-expire. Passing a frozen
- * `nowMs` therefore pauses dismissal - the UI does this while hovered/focused.
+ * Terminal notices the shelf should show: terminal `completed` and `cancelled`
+ * operations that have not been acknowledged. A `completed` notice
+ * auto-dismisses once `nowMs` is at least `SUCCESS_NOTICE_AUTO_DISMISS_MS` past
+ * the time it settled; `cancelled` never auto-expires. `failed` and
+ * `partial-success` are excluded entirely - their warning/error notices now
+ * live in the in-canvas `CanvasAlertNotice`. Passing a frozen `nowMs` therefore
+ * pauses dismissal - the UI does this while hovered/focused.
  */
 export function selectVisibleNotices(
   state: ActivityShelfState,
@@ -220,7 +222,8 @@ export function selectVisibleNotices(
   return state.operations.filter((op) => {
     if (!isTerminal(op.state)) return false;
     if (acknowledged.has(op.id)) return false;
-    if (op.state.kind === 'completed' || op.state.kind === 'partial-success') {
+    if (op.state.kind === 'failed' || op.state.kind === 'partial-success') return false;
+    if (op.state.kind === 'completed') {
       const settledAt = state.settledAtMs[op.id];
       if (settledAt !== undefined && nowMs - settledAt >= SUCCESS_NOTICE_AUTO_DISMISS_MS) {
         return false;
@@ -228,6 +231,29 @@ export function selectVisibleNotices(
     }
     return true;
   });
+}
+
+export interface TerminalAlert {
+  readonly kind: 'warning' | 'error';
+  readonly text: string;
+}
+
+/** The in-canvas alert message for a settled warning/error operation, or null
+ *  for every other state. `failed` -> error (the failure reason); `partial-success`
+ *  -> warning (the completed-with-N-issues sentence plus the failed items). */
+export function terminalAlertFor(op: ActivityOperation): TerminalAlert | null {
+  if (op.state.kind === 'failed') {
+    return { kind: 'error', text: op.state.failure.reason };
+  }
+  if (op.state.kind === 'partial-success') {
+    const n = op.state.failed.length;
+    const items = op.state.failed.map((f) => `${f.item}: ${f.reason}`).join('; ');
+    return {
+      kind: 'warning',
+      text: `${op.task.name}: completed with ${n} issue${n === 1 ? '' : 's'} (${items})`,
+    };
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------

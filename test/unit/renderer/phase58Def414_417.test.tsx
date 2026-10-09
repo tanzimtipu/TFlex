@@ -3,7 +3,7 @@
 //
 // DEF-417 — tearing out an EMPTY placeholder tab used to be a silent no-op.
 //   The tear-out affordance still arms on an empty tab, so `detachTab` must
-//   FAIL LOUD: a warning toast and no window call, tab kept.
+//   FAIL LOUD: an in-canvas warning notice and no window call, tab kept.
 //
 // DEF-414 — tearing out a document with UNSAVED changes used to show the
 //   detached window as CLEAN: `openFromBytes` parses the bytes fresh, so the
@@ -124,6 +124,16 @@ function pointer(type: string, clientX: number, clientY: number, pointerId = 1):
   return e;
 }
 
+/** Phase 126 (chunk B1) — the in-canvas notice enters as a collapsed "i" and
+ *  commits to the expanded box on a double rAF (`useNoticeCollapse`), so give
+ *  that hand-off real time to settle before asserting the box is mounted. */
+async function settleNoticeEnter(): Promise<void> {
+  await act(async (): Promise<void> => {
+    await new Promise<void>((resolve) => setTimeout(resolve, 60));
+  });
+  await flushAsync();
+}
+
 describe("detachRefusal (DEF-417)", () => {
   it("returns a warning toast when the tab has no document to move", () => {
     expect(detachRefusal(false)).toEqual({
@@ -216,8 +226,17 @@ describe("Phase 58 tear-out integration (real App)", () => {
     await flushAsync();
 
     expect(detachMock).not.toHaveBeenCalled();
-    const toast = container.querySelector<HTMLElement>(".toast-warning .toast-text");
-    expect(toast?.textContent).toBe("This tab has no document to move.");
+    // Phase 126 (chunk B1) — the DEF-417 warning now travels the reducer into
+    // the in-canvas alert notice (mounted on Home here, since the empty tab
+    // keeps the canvas off), never a warning toast.
+    await settleNoticeEnter();
+    const notice = container.querySelector<HTMLElement>(
+      '[data-canvas-alert-notice][data-canvas-alert-tone="warning"]',
+    );
+    const message = notice?.querySelector<HTMLElement>("[data-canvas-alert-message]");
+    expect(message?.textContent).toBe("This tab has no document to move.");
+    expect(container.querySelector(".toast-warning")).toBeNull();
+    expect(container.querySelector(".toast-error")).toBeNull();
     // The empty tab is kept.
     expect(container.querySelector(`[data-tab-id='${diag.activeTabId}']`)).not.toBeNull();
   });

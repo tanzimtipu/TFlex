@@ -70,6 +70,7 @@ const MIGRATED_SURFACES: readonly string[] = [
   "components/BrandMark.tsx",
   "components/BrandWordmark.tsx",
   "components/Button.tsx",
+  "components/CanvasAlertNotice.tsx",
   "components/CanvasPills.tsx",
   "components/CloseTabPromptDialog.tsx",
   "components/CommandBar.tsx",

@@ -44,18 +44,21 @@ test.describe('Installed App Verification', () => {
     await firstWindow.click('button:has-text("Open PDF")');
     console.log('Clicked Open PDF button');
     
-    // Wait for either workspace or an error toast
+    // Wait for either workspace or an in-canvas error alert (Phase 126 retired
+    // the warning/error toast popups; the alert is the current surface).
     await Promise.race([
       firstWindow.waitForSelector('.workspace', { timeout: 20000 }),
-      firstWindow.waitForSelector('.toast-error', { timeout: 20000 })
+      firstWindow.waitForSelector('[data-canvas-alert-notice][data-canvas-alert-tone="error"]', { timeout: 20000 })
     ]);
 
-    const hasErrorToast = await firstWindow.evaluate(() => {
-      const toast = document.querySelector('.toast-error');
-      return toast ? toast.innerText : null;
+    const hasErrorAlert = await firstWindow.evaluate(() => {
+      const el = document.querySelector(
+        '[data-canvas-alert-notice][data-canvas-alert-tone="error"]',
+      );
+      return el ? el.innerText : null;
     });
-    if (hasErrorToast) {
-        console.log('Error toast found:', hasErrorToast);
+    if (hasErrorAlert) {
+        console.log('Error alert found:', hasErrorAlert);
     }
     await firstWindow.screenshot({ path: 'screenshots/installed_1_open.png' });
 

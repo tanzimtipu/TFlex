@@ -210,25 +210,23 @@ describe('activityShelf completion actions', () => {
   });
 });
 
-describe('activityShelf failure detail', () => {
-  it('lists partial-success failed items', () => {
+describe('activityShelf failure detail (retired to the canvas alert)', () => {
+  it('renders no failed-items list and no failure reason for a partial-success operation', () => {
     const op = completePartial(running(), [
       { item: 'page 3', reason: 'blank' },
       { item: 'page 7', reason: 'corrupt' },
     ]);
     const host = renderPanel([op]);
-    const items = [...host.querySelectorAll('[data-activity-failed-item]')].map(
-      (el): string => el.textContent ?? '',
-    );
-    expect(items.length).toBe(2);
-    expect(items.join(' ')).toContain('page 3');
-    expect(items.join(' ')).toContain('corrupt');
+    expect(host.querySelector('[data-activity-failed-items]')).toBeNull();
+    expect(host.querySelector('[data-activity-failed-item]')).toBeNull();
+    expect(host.querySelector('[data-activity-failure-reason]')).toBeNull();
   });
 
-  it('renders the failure reason for a failed operation', () => {
+  it('renders no failure detail for a failed operation', () => {
     const op = failOperation(running('op-f'), { item: 'a.pdf', reason: 'unreadable' });
     const host = renderPanel([op]);
-    expect(host.querySelector('[data-activity-failure-reason]')?.textContent).toBe('unreadable');
+    expect(host.querySelector('[data-activity-failed-items]')).toBeNull();
+    expect(host.querySelector('[data-activity-failure-reason]')).toBeNull();
   });
 });
 
@@ -348,12 +346,13 @@ describe('activityShelf accessibility (TFL-1216 chunk C8)', () => {
     expect(active?.querySelector('[aria-hidden="true"]')?.textContent).toBe(' - 4 of 12 pages');
   });
 
-  it('announces actionable failures with role="alert"', () => {
+  it('renders no actionable failure alert in the shelf (retired to the canvas alert)', () => {
     const partial = completePartial(running('op-p'), [{ item: 'page 3', reason: 'blank' }]);
     const failed = failOperation(running('op-f'), { item: 'a.pdf', reason: 'unreadable' });
     const host = renderPanel([partial, failed]);
-    expect(host.querySelector('[data-activity-failed-items]')?.getAttribute('role')).toBe('alert');
-    expect(host.querySelector('[data-activity-failure-reason]')?.getAttribute('role')).toBe('alert');
+    expect(host.querySelector('[data-activity-failed-items]')).toBeNull();
+    expect(host.querySelector('[data-activity-failure-reason]')).toBeNull();
+    expect(host.querySelector('[role="alert"]')).toBeNull();
   });
 
   it('moves focus into the non-modal panel on open', () => {

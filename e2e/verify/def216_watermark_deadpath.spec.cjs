@@ -63,33 +63,37 @@ test('DEF-216: Watermark apply is a dead path - engine:addWatermark never regist
     await textField.waitFor({ timeout: 15000, state: 'visible' });
     await textField.fill('CONFIDENTIAL');
 
-    // 6. Click "Apply watermark" and wait for the toast.
+    // 6. Click "Apply watermark" and wait for the notice. Phase 126 - the engine
+    //    error is now routed into the in-canvas alert (error tone), not a toast
+    //    popup.
     const confirm = window.locator('[data-watermark-confirm]');
     await confirm.waitFor({ timeout: 15000, state: 'visible' });
     await confirm.click();
-    const toast = window.locator('.toast-stack .toast').first();
-    await toast.waitFor({ timeout: 10000, state: 'visible' });
-    await window.waitForTimeout(1500); // let the toast animation settle
+    const errorAlert = window.locator(
+      '[data-canvas-alert-notice][data-canvas-alert-tone="error"]',
+    );
+    await errorAlert.waitFor({ timeout: 10000, state: 'visible' });
+    await window.waitForTimeout(1500); // let the notice enter settle
 
-    // 7. Capture the exact toast text + styling class.
-    const toastText = (await toast.locator('.toast-text').textContent()) || '';
-    const toastClass = await toast.getAttribute('class');
-    const isErrorToast = /toast-error/.test(toastClass || '');
-    console.log(`TOAST_EVIDENCE="${toastText}" (class="${toastClass}", isError=${isErrorToast})`);
+    // 7. Capture the exact notice text + tone.
+    const toastText = (await errorAlert.innerText()) || '';
+    const toastTone = await errorAlert.getAttribute('data-canvas-alert-tone');
+    const isErrorToast = toastTone === 'error';
+    console.log(`ALERT_EVIDENCE="${toastText}" (tone="${toastTone}", isError=${isErrorToast})`);
 
-    // 8. Screenshot the post-apply state (dialog closed, toast visible).
+    // 8. Screenshot the post-apply state (dialog closed, notice visible).
     await shot(window, 'def-216-watermark-deadpath.png');
 
     // 9. Assert the Phase-18 promise. This is expected to FAIL on the
     //    current HEAD: the engine channel is unregistered in main and
-    //    unexposed in preload, so the user gets the error toast instead.
+    //    unexposed in preload, so the user gets the error notice instead.
     expect(
       toastText,
-      `Phase 18 promise: the apply must confirm with the success toast, not an error (dead path: engine:addWatermark never registered in main / exposed in preload)`,
+      `Phase 18 promise: the apply must confirm with the success notice, not an error (dead path: engine:addWatermark never registered in main / exposed in preload)`,
     ).toBe('Watermark applied.');
     expect(
       isErrorToast,
-      'Phase 18 promise: no error styling on the confirm toast',
+      'Phase 18 promise: no error styling on the confirm notice',
     ).toBe(false);
   } finally {
     await hardClose(electronApp, 'def216-watermark');

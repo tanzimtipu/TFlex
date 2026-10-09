@@ -1,45 +1,45 @@
-import { AlertCircle, AlertTriangle, CheckCircle, Info, X } from 'lucide-react';
+import { CheckCircle, Info, X } from 'lucide-react';
 import { Icon } from '../icons/Icon';
 import { IconButton } from './Button';
 import { useEffect } from 'react';
 import { AnimatePresence } from 'motion/react';
 import { TfToast } from './motion/TfMotion';
 
-/** Toast kind. Phase 13 adds `success` + `warning` so the renderer can
- *  surface non-error non-info results distinctly. The accent still
- *  claims only the `info` slot — success / warning / error are
- *  status-only colours, never primary actions. Every existing call
- *  site passes `'info'` or `'error'`; the new kinds are opt-in. */
+/** The wide INPUT union for a toast request. Phase 126 retires the
+ *  `warning` / `error` toast SURFACE — those tones are routed into the
+ *  in-canvas `CanvasAlertNotice` by the App reducer — but the ~100
+ *  existing call sites still name them, so the input type stays wide.
+ *  Only `info` / `success` are ever rendered as toasts. */
+export type ToastKind = 'info' | 'success' | 'warning' | 'error';
+
+/** The RENDERED toast record. Phase 126 narrows this to the surviving
+ *  kinds: `warning` / `error` no longer have a toast presentation. The
+ *  accent claims only the `info` slot — `success` is a status-only
+ *  colour, never a primary action. */
 export interface Toast {
   id: number;
-  kind: 'error' | 'info' | 'success' | 'warning';
+  kind: 'info' | 'success';
   text: string;
 }
 
 /** Pure mapping from kind to icon component. Extracted so tests can
  *  pin the kind -> icon contract without rendering the component. */
-export function toastIcon(kind: Toast['kind']): typeof AlertCircle {
+export function toastIcon(kind: Toast['kind']): typeof CheckCircle {
   switch (kind) {
-    case 'error': return AlertCircle;
     case 'success': return CheckCircle;
-    case 'warning': return AlertTriangle;
     case 'info': return Info;
   }
 }
 
-/** Pure durability contract for the toast surface. Only non-actionable
- *  kinds auto-dismiss; `null` means the toast persists until the user
- *  clicks Dismiss. Actionable kinds (`warning`, `error`) must never
- *  vanish before they are read. Extracted so tests can pin the
- *  kind -> auto-dismiss contract without rendering the component. */
+/** Pure durability contract for the toast surface. Both surviving kinds
+ *  are non-actionable and auto-dismiss; `null` would mean the toast
+ *  persists until the user clicks Dismiss. Extracted so tests can pin
+ *  the kind -> auto-dismiss contract without rendering the component. */
 export function toastAutoDismissMs(kind: Toast['kind']): number | null {
   switch (kind) {
     case 'success':
     case 'info':
       return 5000;
-    case 'warning':
-    case 'error':
-      return null;
   }
 }
 

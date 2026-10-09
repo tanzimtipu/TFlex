@@ -192,6 +192,12 @@ test.describe('Phase 18 watermark — part 1 (gate, preview, apply, pixel proof)
     expect(toastText, 'exact success toast text').toBe('Watermark applied.');
     expect(await window.locator('.toast-stack .toast-error').count(), 'no error toast')
       .toBe(0);
+    // Phase 126 retired the warning/error toasts; the same promise is now held by
+    // the in-canvas alert, so assert no error-toned alert either.
+    expect(
+      await window.locator('[data-canvas-alert-notice][data-canvas-alert-tone="error"]').count(),
+      'no error alert',
+    ).toBe(0);
     await shot(window, 'phase18-applied-text.png');
 
     // Reopen the dialog through its current home and check the

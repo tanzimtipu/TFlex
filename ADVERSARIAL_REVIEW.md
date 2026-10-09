@@ -3,6 +3,242 @@
 > Read discipline: this is a historical evidence ledger. Search for the assigned `ADV-NNN`
 > or unresolved `Disposition: PENDING` entries; do not load prior campaigns wholesale.
 
+## Session: TFL-1505 phase-126 diff-pass — canvas alert notice (TFL-1400)
+
+**Date:** 2026-10-09  
+**Agent:** adversary (openrouter/qwen/qwen3.5-397b-a17b)  
+**Session:** diff-pass  
+**Scope:** Attack the Phase 126 chunk-A/B/C diff (TFL-1400, verified by TFL-1504):
+- New `CanvasAlertNotice.tsx` component with `useNoticeCollapse` hook
+- `errorReducer` routes `warning`/`error` to in-canvas alert (deduped by exact text)
+- `terminalAlertFor` routes shelf `failed`/`partial-success` ops to alert
+- Home surface renders alerts when no document open
+- `renderDocument` restructure wraps both BookView/DocumentView in `OutlineEditorContext.Provider`
+- Retired `.toast-warning`/`.toast-error` CSS and shelf failure rows
+
+---
+
+## Attack Vector 1: Message loss — pushToast error/warning paths and terminalAlertFor shelf ops
+
+**Question:** Does any `pushToast("error"|"warning", ...)` path surface nowhere? Does any settled `failed`/`partial-success` shelf op drop its `terminalAlertFor` message?
+
+**Audit:**
+- `errorReducer` (App.tsx:545-563): Routes `warning`/`error` to `state.alerts` with dedup by exact text. All ~100 existing call sites unchanged.
+- `terminalAlertFor` (activityShelf.ts:244-256): Pure function mapping `failed` -> error, `partial-success` -> warning.
+- Shelf alert effect (App.tsx:9169-9179): Routes settled ops with ref guard to prevent re-push.
+- Alert mount gate (App.tsx:13201-13202): `meta.id === tabs.activeId ? errorState.alerts : undefined` — active tab only.
+- Home mount (App.tsx:12605-12616): Renders alerts when `showWelcomeEffective` (no document open).
+
+**Finding: ADV-1505-01 — NO DEFECT**
+
+The routing is sound:
+- All `pushToast("warning"|"error")` calls route to `errorState.alerts` and surface on the active canvas or Home
+- Shelf ops settle -> `terminalAlertFor` -> `dispatchError` -> alert surfaces
+- Background tab ops: The alert shows on the active surface (correct — the background tab's canvas is not visible)
+- Ref guard prevents duplicate pushes of the same op
+
+**Verdict:** No message loss — all paths verified.
+
+---
+
+## Attack Vector 2: Duplicate notices — same message twice or alert mounting in multiple places
+
+**Question:** Can the same message render twice? Can the alert mount in multiple places at once (active canvas + Home, or multiple Multi Mode panes)?
+
+**Audit:**
+- Dedup: `errorReducer` line 550 checks `state.alerts[kind].includes(text)` before appending
+- Home vs Canvas: MUTUALLY EXCLUSIVE — `showWelcomeEffective` is true when no document open; canvas mount requires `meta.id === tabs.activeId`
+- Multi Mode: `renderDocument` called once per pane, but alert only passed when `meta.id === tabs.activeId`
+
+**Finding: ADV-1505-02 — NO DEFECT**
+
+No duplication reachable:
+- Exact-text dedup prevents duplicate messages in the same alert array
+- Home and canvas are mutually exclusive states
+- Multi Mode panes: only the active pane's canvas receives the alert
+
+**Verdict:** No duplication — gates are mutually exclusive.
+
+---
+
+## Attack Vector 3: Out-of-canvas paint — alert renders outside .canvas-overlay
+
+**Question:** Does the alert ever render outside `.canvas-overlay` / `.canvas-top-right` (Book View active, Multi Mode, narrow window sizes)?
+
+**Audit:**
+- CSS (styles.css:22861-22887): `.canvas-top-right .canvas-alert-notice` is bounded by `max-height: calc(100cqh - var(--tf-chrome-y, 0px) - 200px)` with `overflow: auto`
+- Mount point: `DocumentSurfaceColumn` receives `canvasNotices` prop, mounts inside `.canvas-overlay` (App.tsx:770-783)
+- e2e test (phase126_canvas_alert_notice.spec.cjs:143-148): Verifies `.canvas-top-right .canvas-notices [data-canvas-alert-notice]`
+
+**Finding: ADV-1505-03 — NO DEFECT**
+
+The alert is canvas-bound by construction:
+- `DocumentSurfaceColumn` composes notices into `canvasNotices` prop
+- `DocumentView`/`BookView` mount notices inside `.canvas-overlay`
+- CSS bounds prevent overflow past canvas bottom
+
+**Verdict:** No out-of-canvas paint — bounded by container query.
+
+---
+
+## Attack Vector 4: Unread-message destruction on collapse
+
+**Question:** Does collapsing to the "i" lose the message? Is the "i" re-expandable? What about a second message arriving while collapsed?
+
+**Audit:**
+- `CanvasAlertNotice.tsx:34`: Returns `null` if `messages.length === 0` — unmounts, resets collapse state (correct)
+- `CanvasAlertNotice.tsx:37-55`: Collapsed phase renders `[data-canvas-alert-icon]` button with `expand` handler
+- `useNoticeCollapse` (hooks/useNoticeCollapse.ts:41-96): 
+  - `expand()` sets `phase = 'expanded'` (line 55)
+  - Dwell timer resets on every expand (lines 86-90)
+  - Collapse is no-op while already `closing` (line 48)
+- Messages array: Multiple messages render as `<li>` elements (lines 71-79)
+
+**Finding: ADV-1505-04 — NO DEFECT**
+
+The collapse machine is sound:
+- Collapsed "i" is re-expandable via `[data-canvas-alert-icon]` button
+- Expand resets the dwell timer
+- Multiple messages all render in the expanded box
+- Unmount on empty messages is correct (no stale state)
+
+**Verdict:** No message destruction — collapse is reversible, messages persist.
+
+---
+
+## Attack Vector 5: Instant path — prefers-reduced-motion / :root[data-animations="off"]
+
+**Question:** Does reduced motion or animations-off leave a stuck `entering`/`closing` phase or an invisible notice?
+
+**Audit:**
+- `useNoticeCollapse.ts:41-42`: Instant path starts at `'expanded'` instead of `'entering'`
+- `useNoticeCollapse.ts:45-50`: Instant collapse goes straight to `'collapsed'`
+- CSS (styles.css:23021-23033): Both `@media (prefers-reduced-motion)` and `:root[data-animations="off"]` set `animation: none`
+
+**Finding: ADV-1505-05 — NO DEFECT**
+
+The instant path is correct:
+- No stuck phases — starts/ends at settled states
+- Animations dropped outright, no mid-keyframe paint
+- Hook and CSS both honor reduced-motion
+
+**Verdict:** No stuck states — instant path is first-class.
+
+---
+
+## Attack Vector 6: Context regression from renderDocument restructure
+
+**Question:** Does `OutlineEditorContext` still reach `DocumentView`? Does Book View still render/work? Does the early-return path still supply the context?
+
+**Audit:**
+- `renderDocument` restructure (App.tsx:12777-13251):
+  - `documentSurface` = bare `BookView` or `DocumentView` element
+  - BOTH returns wrap in `OutlineEditorContext.Provider` (lines 13215-13217, 13221-13250)
+  - Early-return path (no notices) also wraps (lines 13214-13218)
+
+**Finding: ADV-1505-06 — NO DEFECT**
+
+Context reaches both components:
+- Both `BookView` and `DocumentView` returns are wrapped
+- Early-return path supplies context
+- No regression to outline editing
+
+**Verdict:** No context regression — both paths wrapped.
+
+---
+
+## Attack Vector 7: Dedup correctness — distinct messages not dropped
+
+**Question:** Are distinct messages dropped by the dedup key? Is the dedup key the exact text?
+
+**Audit:**
+- `errorReducer.ts:550`: `if (state.alerts[kind].includes(text)) return state;`
+- Dedup key: Exact string match via `Array.includes()`
+
+**Finding: ADV-1505-07 — NO DEFECT**
+
+Dedup is exact-text only:
+- "File is password-protected" ≠ "File is password-protected." (different strings, both kept)
+- Same exact text appended twice -> second dropped (correct)
+
+**Verdict:** Dedup correct — exact text match, distinct messages preserved.
+
+---
+
+## Attack Vector 8: Home states — empty / loading / error / populated
+
+**Question:** Does the alert render correctly in all Home states?
+
+**Audit:**
+- Home mount (App.tsx:12605-12616): Renders under `showWelcomeEffective` (no document open)
+- Same `CanvasAlertNotice` component as canvas
+- e2e test (phase126_canvas_alert_notice.spec.cjs:91-100): Verifies Home alert visible, not in `.canvas-notices` layer
+
+**Finding: ADV-1505-08 — NO DEFECT**
+
+Home renders alert correctly:
+- No canvas layer on Home (`.canvas-notices` count = 0)
+- Alert visible beside welcome hero
+- Same collapse/expand behavior
+
+**Verdict:** Home states correct — alert renders, no canvas layer.
+
+---
+
+## Attack Vector 9: Boundaries — no network, no new design token, no orphaned selector/string
+
+**Question:** Any network calls? New design tokens? Orphaned CSS selectors or strings for retired toasts/shelf failure rows?
+
+**Audit:**
+- `CanvasAlertNotice.tsx`: Zero network calls, zero new tokens (uses `--warning`/`--error`)
+- CSS (styles.css:22894-23033): Uses existing tokens only
+- Retired CSS: `.toast-warning`/`.toast-error` removed (Toasts.tsx:13-20 confirms narrow render type)
+- Retired shelf: `.activity-shelf-failed*` removed (ActivityShelf.tsx confirms no failure row rendering)
+
+**Finding: ADV-1505-09 — NO DEFECT**
+
+Boundaries respected:
+- No network calls
+- No new design tokens
+- Retired CSS/strings removed
+- No orphaned selectors
+
+**Verdict:** Boundaries clean — additive only, retired surfaces removed.
+
+---
+
+## Summary
+
+| ADV ID | Severity | Verdict |
+| --- | --- | --- |
+| ADV-1505-01 | NONE | Message loss — all paths verified |
+| ADV-1505-02 | NONE | Duplicate notices — mutually exclusive gates |
+| ADV-1505-03 | NONE | Out-of-canvas paint — bounded by container query |
+| ADV-1505-04 | NONE | Unread-message destruction — collapse reversible |
+| ADV-1505-05 | NONE | Instant path — no stuck states |
+| ADV-1505-06 | NONE | Context regression — both paths wrapped |
+| ADV-1505-07 | NONE | Dedup correctness — exact text match |
+| ADV-1505-08 | NONE | Home states — alert renders correctly |
+| ADV-1505-09 | NONE | Boundaries — no orphans, no network |
+
+**Overall verdict:** CLEAN — no concrete, reproducible defects found. The Phase 126 canvas alert notice implementation is sound:
+- Message routing verified (errorReducer + terminalAlertFor)
+- No duplication (mutually exclusive mounts, exact-text dedup)
+- Canvas-bound (CSS container query bounds)
+- Collapse machine reversible (re-expandable, dwell reset)
+- Instant path first-class (no stuck phases)
+- Context preserved (both BookView/DocumentView wrapped)
+- Home surface correct (no canvas layer)
+- Boundaries respected (no new tokens, retired surfaces removed)
+
+The existing e2e test (`e2e/phase126_canvas_alert_notice.spec.cjs`) provides comprehensive live evidence for all attack vectors.
+
+**Disposition:** FINDINGS FILED — nine NONE verdicts, zero defects.
+
+**CTO triage (2026-10-09):** ADV-1505-01 through ADV-1505-09 REJECTED — all nine are NO-DEFECT (NONE severity) verdicts with source anchors; none yields a DEF. No OPEN or DISPUTED defect remains for Phase 126; the phase is clear to commit.
+
+---
+
 ## Session: TFL-1484 phase-127 diff-pass — restored top-bar chrome (theme persistence, command retention, multi-mode sync)
 
 **Date:** 2026-10-09  

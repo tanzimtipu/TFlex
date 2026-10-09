@@ -17,7 +17,6 @@ import { Icon } from '../icons/Icon';
 import { Button, IconButton } from './Button';
 import {
   availableCompletionActions,
-  failedItems,
   isRunning,
   type ActivityCompletionAction,
   type ActivityOperation,
@@ -101,8 +100,7 @@ export interface ActivityRowProps {
 }
 
 /** One Activity Shelf row: task icon, task name, scope, honest progress text, a
- *  6px progress track while running, the failure detail, and the available
- *  actions. */
+ *  6px progress track while running, and the available actions. */
 export function ActivityRow(props: ActivityRowProps): ReactElement {
   const { operation, canCancel = false, onCancel, onAction } = props;
   const state = operation.state;
@@ -115,7 +113,6 @@ export function ActivityRow(props: ActivityRowProps): ReactElement {
       ? state.progress
       : null;
   const actions = availableCompletionActions(operation);
-  const failed = failedItems(operation);
 
   return (
     <li
@@ -157,29 +154,6 @@ export function ActivityRow(props: ActivityRowProps): ReactElement {
               }
             />
           </div>
-        )}
-        {failed !== null && failed.length > 0 && (
-          <ul className="activity-shelf-failed" role="alert" data-activity-failed-items>
-            {failed.map((failure, index) => (
-              <li
-                className="activity-shelf-failed-item"
-                key={`${failure.item}-${index}`}
-                data-activity-failed-item
-              >
-                <span className="activity-shelf-failed-name">{failure.item}</span>
-                <span className="activity-shelf-failed-reason">{failure.reason}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-        {state.kind === 'failed' && (
-          <p
-            className="activity-shelf-failure-reason"
-            role="alert"
-            data-activity-failure-reason
-          >
-            {state.failure.reason}
-          </p>
         )}
       </div>
       <div className="activity-shelf-row-actions">

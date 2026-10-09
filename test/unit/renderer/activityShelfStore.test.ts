@@ -24,6 +24,7 @@ import {
   selectActivitySummary,
   selectVisibleNotices,
   SUCCESS_NOTICE_AUTO_DISMISS_MS,
+  terminalAlertFor,
   UPDATE_OPERATION_ID,
   UPDATE_TASK_NAME,
   updateStateAction,
@@ -152,13 +153,97 @@ describe('selectVisibleNotices', () => {
     expect(selectVisibleNotices(state, 1_000 + SUCCESS_NOTICE_AUTO_DISMISS_MS)).toHaveLength(0);
   });
 
-  it('never auto-hides a failed notice', () => {
+  it('excludes a failed notice entirely (it lives in the canvas alert now)', () => {
     const state = run(
       initialActivityShelfState,
       beginOp('op-1'),
       { type: 'fail', id: 'op-1', failure: { item: 'a.pdf', reason: 'decode failed' }, atMs: 1_000 },
     );
-    expect(selectVisibleNotices(state, 1_000_000)).toHaveLength(1);
+    expect(selectVisibleNotices(state, 1_000)).toHaveLength(0);
+    expect(selectVisibleNotices(state, 1_000_000)).toHaveLength(0);
+  });
+
+  it('excludes a partial-success notice entirely (it lives in the canvas alert now)', () => {
+    const state = run(
+      initialActivityShelfState,
+      beginOp('op-1'),
+      {
+        type: 'complete-partial',
+        id: 'op-1',
+        failed: [{ item: 'page 3', reason: 'blank' }],
+        atMs: 1_000,
+      },
+    );
+    expect(selectVisibleNotices(state, 1_000)).toHaveLength(0);
+    expect(selectVisibleNotices(state, 1_000_000)).toHaveLength(0);
+  });
+});
+
+describe('terminalAlertFor', () => {
+  it('maps a failed operation to an error alert carrying the failure reason', () => {
+    const state = run(
+      initialActivityShelfState,
+      beginOp('op-1'),
+      { type: 'fail', id: 'op-1', failure: { item: 'a.pdf', reason: 'decode failed' } },
+    );
+    expect(terminalAlertFor(state.operations[0]!)).toEqual({
+      kind: 'error',
+      text: 'decode failed',
+    });
+  });
+
+  it('maps a partial-success operation to the completed-with-N-issues warning', () => {
+    const state = run(
+      initialActivityShelfState,
+      beginOp('op-1'),
+      {
+        type: 'complete-partial',
+        id: 'op-1',
+        failed: [
+          { item: 'page 3', reason: 'blank' },
+          { item: 'page 7', reason: 'corrupt' },
+        ],
+      },
+    );
+    expect(terminalAlertFor(state.operations[0]!)).toEqual({
+      kind: 'warning',
+      text: 'Import: completed with 2 issues (page 3: blank; page 7: corrupt)',
+    });
+  });
+
+  it('uses the singular "issue" for a single failed item', () => {
+    const state = run(
+      initialActivityShelfState,
+      beginOp('op-1'),
+      {
+        type: 'complete-partial',
+        id: 'op-1',
+        failed: [{ item: 'page 3', reason: 'blank' }],
+      },
+    );
+    expect(terminalAlertFor(state.operations[0]!)).toEqual({
+      kind: 'warning',
+      text: 'Import: completed with 1 issue (page 3: blank)',
+    });
+  });
+
+  it('returns null for running, completed and cancelled operations', () => {
+    const running = run(initialActivityShelfState, beginOp('op-1'));
+    expect(terminalAlertFor(running.operations[0]!)).toBeNull();
+
+    const completed = run(initialActivityShelfState, beginOp('op-1'), {
+      type: 'complete',
+      id: 'op-1',
+    });
+    expect(terminalAlertFor(completed.operations[0]!)).toBeNull();
+
+    const cancelled = run(
+      initialActivityShelfState,
+      beginOp('op-1'),
+      { type: 'request-cancel', id: 'op-1' },
+      { type: 'confirm-cancel', id: 'op-1' },
+    );
+    expect(terminalAlertFor(cancelled.operations[0]!)).toBeNull();
   });
 });
 

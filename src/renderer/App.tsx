@@ -252,6 +252,7 @@ import {
   searchIndexStartAction,
   selectActiveOperations,
   selectVisibleNotices,
+  terminalAlertFor,
   UPDATE_OPERATION_ID,
   updateStateAction,
 } from "./state/activityShelf";
@@ -1336,9 +1337,8 @@ export function App(): ReactElement {
   );
   const [activityShelfOpen, setActivityShelfOpen] = useState(false);
   // The clock `selectVisibleNotices` reads. It only advances while a
-  // `completed`/`partial-success` notice is visible and is frozen (no tick)
-  // while the shelf is hovered or focused, which pauses auto-dismiss by
-  // construction.
+  // `completed` notice is visible and is frozen (no tick) while the shelf is
+  // hovered or focused, which pauses auto-dismiss by construction.
   const [activityShelfNowMs, setActivityShelfNowMs] = useState<number>(
     (): number => Date.now(),
   );
@@ -1347,6 +1347,12 @@ export function App(): ReactElement {
   // (Escape or the close control) restores focus to it, so a keyboard user is
   // never stranded when the non-modal shelf closes.
   const activityShelfTriggerRef = useRef<HTMLButtonElement | null>(null);
+  // Phase 126 (chunk B2) - a settled `failed`/`partial-success` shelf operation
+  // no longer renders a shelf notice; its message is routed ONCE into the
+  // in-canvas `CanvasAlertNotice`. This ref records which operation ids have
+  // already been routed, so the effect below never re-pushes the same alert as
+  // the shelf state churns.
+  const routedShelfAlertsRef = useRef<Set<string>>(new Set());
   // TFL-1216 (chunk C7) — the single update operation currently on the shelf,
   // mirrored from the reducer so the update-state effect below can tell "begin"
   // from "keep" without depending on `activityShelf` (which would re-run and
@@ -9160,10 +9166,22 @@ pushToast(
     return activityShelf.operations.filter((op) => keep.has(op.id));
   }, [activityShelf, activityShelfNowMs]);
 
+  // Phase 126 (chunk B2) - a settled `failed`/`partial-success` operation now
+  // surfaces as the in-canvas `CanvasAlertNotice` instead of a shelf notice.
+  // The ref guards against re-pushing the same operation on every shelf change.
+  useEffect((): void => {
+    for (const op of activityShelf.operations) {
+      const alert = terminalAlertFor(op);
+      if (alert === null || routedShelfAlertsRef.current.has(op.id)) continue;
+      routedShelfAlertsRef.current.add(op.id);
+      dispatchError({ type: 'push', toast: { kind: alert.kind, text: alert.text } });
+    }
+  }, [activityShelf]);
+
   const activityShelfHasTimedNotice = useMemo(
     () =>
       selectVisibleNotices(activityShelf, activityShelfNowMs).some(
-        (op) => op.state.kind === 'completed' || op.state.kind === 'partial-success',
+        (op) => op.state.kind === 'completed',
       ),
     [activityShelf, activityShelfNowMs],
   );
@@ -12756,9 +12774,7 @@ pushToast(
                     visiblePageCount: engine.engineState.pageCount,
                     commit: commitOutline,
                   };
-            const document = (
-              <OutlineEditorContext.Provider value={outlineEditorConfig}>
-                {bookViewForPane ? (
+            const documentSurface = bookViewForPane ? (
               <BookView
                 doc={open.session.doc}
                 pageCount={engine.engineState.pageCount}
@@ -13158,8 +13174,6 @@ pushToast(
                         : null
                     }
                   />
-                )}
-              </OutlineEditorContext.Provider>
             );
             // Phase 52 (feature B) — an encrypted document keeps every tool
             // enabled; the banner only reports the encryption state.
@@ -13197,11 +13211,16 @@ pushToast(
               pdf3d.length === 0 &&
               !alertHasMessages
             ) {
-              return document;
+              return (
+                <OutlineEditorContext.Provider value={outlineEditorConfig}>
+                  {documentSurface}
+                </OutlineEditorContext.Provider>
+              );
             }
             return (
+              <OutlineEditorContext.Provider value={outlineEditorConfig}>
               <DocumentSurfaceColumn
-                document={document}
+                document={documentSurface}
                 sourceFormat={sourceFormat}
                 conversion={conversion}
                 validation={validation}
@@ -13228,6 +13247,7 @@ pushToast(
                 onOpenReadingView={openReadingView}
                 onOpenComicView={openComicView}
               />
+              </OutlineEditorContext.Provider>
             );
           }}
         />

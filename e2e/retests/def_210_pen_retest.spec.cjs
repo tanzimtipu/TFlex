@@ -57,21 +57,32 @@ async function openDoc(sample, waitMs = 2200) {
 
 async function collectToasts(label) {
   const seen = await win.evaluate(() =>
-    [...document.querySelectorAll('.toast')].map((t) => ({
-      cls: t.className,
-      text: (t.textContent || '').trim(),
-    })),
+    [...document.querySelectorAll('.toast')]
+      .map((t) => ({
+        cls: t.className,
+        text: (t.textContent || '').trim(),
+      }))
+      // Phase 126 — warning/error feedback is the in-canvas alert now, not a
+      // toast popup, so collect the alert boxes alongside the info/success toasts.
+      .concat(
+        [...document.querySelectorAll('[data-canvas-alert-notice]')].map((t) => ({
+          cls: `canvas-alert-notice ${t.getAttribute('data-canvas-alert-tone') || ''}`,
+          text: (t.textContent || '').trim(),
+        })),
+      ),
   );
   seen.forEach((t) => {
     if (!toastsSeen.some((x) => x.text === t.text && x.cls === t.cls)) toastsSeen.push(t);
   });
-  console.log(`[DEF210] toasts at ${label}: ${JSON.stringify(seen)}`);
+  console.log(`[DEF210] notices at ${label}: ${JSON.stringify(seen)}`);
   return seen;
 }
 
 function toastErrors(seen) {
   return seen.filter(
-    (t) => /toast-error/.test(t.cls) || /annotation requires|engine.error|requires at least one rect/i.test(t.text),
+    (t) =>
+      /canvas-alert-notice\s+error/.test(t.cls) ||
+      /annotation requires|engine.error|requires at least one rect/i.test(t.text),
   );
 }
 

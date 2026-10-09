@@ -2,23 +2,23 @@
 // React 19 needs this flag set before importing react-dom/client so
 // that `act` recognises the test env and stops spamming stderr.
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
-// Phase 13 — toast kinds + icons.
+// Phase 13 — toast kinds + icons. Phase 126 (chunk B1) retired the
+// `warning` / `error` toast SURFACE: those tones now render as the
+// in-canvas `CanvasAlertNotice`, so only `info` / `success` survive here.
 //
-// The toast surface gained two new kinds (success, warning) so the
-// renderer can communicate non-error non-info results with
-// semantic-coloured borders. The contract under test:
+// The contract under test:
 //   1. `toastIcon(kind)` is a pure mapping from kind to Lucide icon
 //      component. Adding a new kind to the union without a mapping
 //      here fails TS exhaustiveness.
-//   2. The four CSS variants (info / success / warning / error) each
-//      use the matching semantic color token, NOT a raw hex. The
-//      stylesheet is the contract — these tests assert the class
-//      names exist on the rendered DOM so a stylesheet refactor
-//      doesn't silently drop a variant.
+//   2. The surviving CSS variants (info / success) each use the
+//      matching semantic color token, NOT a raw hex. The stylesheet is
+//      the contract — these tests assert the class names exist on the
+//      rendered DOM so a stylesheet refactor doesn't silently drop a
+//      variant.
 import { describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { AlertCircle, AlertTriangle, CheckCircle, Info } from "lucide-react";
+import { CheckCircle, Info } from "lucide-react";
 import {
   Toasts,
   toastAutoDismissMs,
@@ -29,9 +29,7 @@ import {
 function makeToasts(): Toast[] {
   return [
     { id: 1, kind: "info", text: "Info message" },
-    { id: 2, kind: "error", text: "Error message" },
-    { id: 3, kind: "success", text: "Success message" },
-    { id: 4, kind: "warning", text: "Warning message" },
+    { id: 2, kind: "success", text: "Success message" },
   ];
 }
 
@@ -54,17 +52,11 @@ function renderToasts(items: Toast[]): { container: HTMLElement; cleanup: () => 
 }
 
 describe("toastIcon — kind -> icon mapping (pure, exhaustive)", () => {
-  it("maps error -> AlertCircle", () => {
-    expect(toastIcon("error")).toBe(AlertCircle);
-  });
   it("maps info -> Info", () => {
     expect(toastIcon("info")).toBe(Info);
   });
   it("maps success -> CheckCircle", () => {
     expect(toastIcon("success")).toBe(CheckCircle);
-  });
-  it("maps warning -> AlertTriangle", () => {
-    expect(toastIcon("warning")).toBe(AlertTriangle);
   });
 });
 
@@ -75,25 +67,17 @@ describe("toastAutoDismissMs — durability contract (pure)", () => {
   it("auto-dismisses info after 5000 ms", () => {
     expect(toastAutoDismissMs("info")).toBe(5000);
   });
-  it("never auto-dismisses warning (null means persist)", () => {
-    expect(toastAutoDismissMs("warning")).toBeNull();
-  });
-  it("never auto-dismisses error (null means persist)", () => {
-    expect(toastAutoDismissMs("error")).toBeNull();
-  });
 });
 
 describe("ToastItem — timer honours toastAutoDismissMs", () => {
-  it("dismisses success/info after 5000 ms but persists warning/error", () => {
+  it("dismisses info/success after 5000 ms", () => {
     const cases = [
-      { id: 1, kind: "success", dismisses: true },
-      { id: 2, kind: "info", dismisses: true },
-      { id: 3, kind: "warning", dismisses: false },
-      { id: 4, kind: "error", dismisses: false },
+      { id: 1, kind: "success" },
+      { id: 2, kind: "info" },
     ] as const;
     vi.useFakeTimers();
     try {
-      for (const { id, kind, dismisses } of cases) {
+      for (const { id, kind } of cases) {
         const onDismiss = vi.fn();
         const container = document.createElement("div");
         document.body.appendChild(container);
@@ -109,12 +93,8 @@ describe("ToastItem — timer honours toastAutoDismissMs", () => {
         act((): void => {
           vi.advanceTimersByTime(5000);
         });
-        if (dismisses) {
-          expect(onDismiss).toHaveBeenCalledTimes(1);
-          expect(onDismiss).toHaveBeenCalledWith(id);
-        } else {
-          expect(onDismiss).not.toHaveBeenCalled();
-        }
+        expect(onDismiss).toHaveBeenCalledTimes(1);
+        expect(onDismiss).toHaveBeenCalledWith(id);
         act((): void => {
           root.unmount();
         });
@@ -130,18 +110,16 @@ describe("Toasts — semantic class names per kind", () => {
   it("renders one .toast-{kind} class per entry", () => {
     const { container, cleanup } = renderToasts(makeToasts());
     const items = container.querySelectorAll<HTMLElement>(".toast");
-    expect(items.length).toBe(4);
+    expect(items.length).toBe(2);
     expect(items[0]?.classList.contains("toast-info")).toBe(true);
-    expect(items[1]?.classList.contains("toast-error")).toBe(true);
-    expect(items[2]?.classList.contains("toast-success")).toBe(true);
-    expect(items[3]?.classList.contains("toast-warning")).toBe(true);
+    expect(items[1]?.classList.contains("toast-success")).toBe(true);
     cleanup();
   });
 
   it("every toast renders the dismiss-X button", () => {
     const { container, cleanup } = renderToasts(makeToasts());
     const closes = container.querySelectorAll<HTMLButtonElement>(".toast-close");
-    expect(closes.length).toBe(4);
+    expect(closes.length).toBe(2);
     cleanup();
   });
 
@@ -169,7 +147,7 @@ describe("Toasts — semantic class names per kind", () => {
     // to a text "<-X-" instead of the icon, this test catches it.
     const { container, cleanup } = renderToasts(makeToasts());
     const svgs = container.querySelectorAll<SVGElement>(".toast-close svg");
-    expect(svgs.length).toBe(4);
+    expect(svgs.length).toBe(2);
     cleanup();
   });
 });

@@ -10,7 +10,9 @@
 //             `[data-close-tab-prompt]` gate; Cancel keeps it open + intact;
 //             a following Discard close completes.
 //   DEF-417 — tearing out an empty placeholder tab must NOT open a window and
-//             must surface a visible "no document to move" warning toast.
+//             must surface a visible "no document to move" notice. Phase 126
+//             routes it into the in-canvas alert (on Home, because the empty
+//             tab keeps the canvas off), never the retired .toast-warning.
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
@@ -267,27 +269,50 @@ test('DEF-417: tearing out an empty tab toasts and opens NO window', async () =>
     const gesture = await tearOut(origin, 'last');
     console.log(`[DEF-417] gesture=${JSON.stringify(gesture)}`);
 
-    // Read the toast early (toasts auto-dismiss after 5 s).
-    await origin.waitForTimeout(700);
-    const toast = await origin.evaluate(() => {
-      const el = document.querySelector('.toast-warning');
-      const textEl = document.querySelector('.toast-warning .toast-text');
-      if (el === null) return { present: false, text: null, visible: false };
-      const cs = getComputedStyle(el);
-      const r = el.getBoundingClientRect();
+    // Phase 126 — the warning renders as the in-canvas alert notice (on Home,
+    // because the empty tab keeps the canvas off), never the retired
+    // `.toast-warning`. Wait for the enter morph to commit the box, then for
+    // its opacity to settle (the enter animation starts at opacity 0).
+    await origin.waitForSelector(
+      '[data-canvas-alert-notice][data-canvas-alert-tone="warning"]',
+      { state: 'visible', timeout: 10000 },
+    );
+    await expect
+      .poll(
+        async () =>
+          origin.evaluate(() => {
+            const el = document.querySelector(
+              '[data-canvas-alert-notice][data-canvas-alert-tone="warning"]',
+            );
+            if (el === null) return false;
+            const cs = getComputedStyle(el);
+            const r = el.getBoundingClientRect();
+            return (
+              cs.display !== 'none' &&
+              cs.visibility !== 'hidden' &&
+              Number(cs.opacity) > 0 &&
+              r.width > 0 &&
+              r.height > 0
+            );
+          }),
+        { timeout: 5000 },
+      )
+      .toBe(true);
+    const alert = await origin.evaluate(() => {
+      const el = document.querySelector(
+        '[data-canvas-alert-notice][data-canvas-alert-tone="warning"]',
+      );
+      if (el === null) return { present: false, text: null };
+      const msg = el.querySelector('[data-canvas-alert-message]');
       return {
         present: true,
-        text: textEl === null ? null : textEl.textContent,
-        visible:
-          cs.display !== 'none' &&
-          cs.visibility !== 'hidden' &&
-          Number(cs.opacity) > 0 &&
-          r.width > 0 &&
-          r.height > 0,
+        text: msg === null ? null : msg.textContent,
+        toastWarning: document.querySelectorAll('.toast-warning').length,
+        toastError: document.querySelectorAll('.toast-error').length,
       };
     });
-    console.log(`[DEF-417] toast=${JSON.stringify(toast)}`);
-    await origin.screenshot({ path: path.join(SHOTS, 'def417-empty-tearout-toast.png') }).catch(() => {});
+    console.log(`[DEF-417] alert=${JSON.stringify(alert)}`);
+    await origin.screenshot({ path: path.join(SHOTS, 'def417-empty-tearout-alert.png') }).catch(() => {});
 
     const second = await secondP;
     await origin.waitForTimeout(1500);
@@ -297,9 +322,10 @@ test('DEF-417: tearing out an empty tab toasts and opens NO window', async () =>
     expect(second, 'no new window for a document-less tab').toBeNull();
     expect(after.count, 'both tabs are kept (empty tab not moved)').toBe(2);
     expect(after.active, 'active tab unchanged').toBe(before.active);
-    expect(toast.present, 'a warning toast is shown').toBe(true);
-    expect(toast.visible, 'the warning toast is visible').toBe(true);
-    expect(toast.text, 'the toast explains there is no document to move').toContain('no document to move');
+    expect(alert.present, 'the in-canvas warning alert is shown').toBe(true);
+    expect(alert.text, 'the alert explains there is no document to move').toContain('no document to move');
+    expect(alert.toastWarning, 'no retired .toast-warning node').toBe(0);
+    expect(alert.toastError, 'no retired .toast-error node').toBe(0);
   } finally {
     await hardClose(app, 'def417').catch(() => {});
   }

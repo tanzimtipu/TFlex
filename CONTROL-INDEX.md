@@ -980,6 +980,21 @@ terminal), so the row can no longer stay stuck. The per-row OCR Cancel now fires
 `engine.ocrCancel` for the operation's captured document instead of
 `cancelOcrForActiveTab()`. Pinned by `test/unit/renderer/activityShelfStore.test.ts`.
 
+Phase 126 (TFL-1400, chunk B2) retires the shelf's terminal warning/error
+notices. `selectVisibleNotices` (`src/renderer/state/activityShelf.ts`) now
+returns only `completed` (auto-dismiss) and `cancelled` (persist) operations;
+`failed` / `partial-success` are excluded, and `terminalAlertFor` maps each such
+settled operation into the in-canvas `CanvasAlertNotice` through
+`dispatchError({ type: 'push', … })` in `App.tsx`. The shelf no longer renders
+the `data-activity-failed-items` list or the `data-activity-failure-reason`
+paragraph (the C8 `role="alert"` failure detail is withdrawn) and the orphaned
+`.activity-shelf-failed*` / `.activity-shelf-failure-reason` CSS is removed. The
+view-details row above therefore renders for a `completed` row; running /
+progress rows, the Cancel control, the `completed` / `cancelled` notices and
+their completion actions are unchanged. Pinned by
+`test/unit/renderer/activityShelf.test.tsx` and
+`test/unit/renderer/activityShelfStore.test.ts`.
+
 TFL-1397: the Guided Fill panel no longer takes the window down when a
 document-less tab becomes active. Root cause: the panel's mount guard in
 `App.tsx` tested only `activeTab !== null`, but the caption "+" mints an

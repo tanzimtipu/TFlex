@@ -76,28 +76,15 @@ describe("Phase 13 — semantic color tokens", () => {
   });
 
   it("toast variants use the semantic tokens, not raw hex", () => {
-    // The CSS rules `.toast-error`, `.toast-info`, `.toast-success`,
-    // `.toast-warning` must reference `var(--error)` / `var(--info)`
-    // / etc., not `#ef4444` or other raw hex. The previous
-    // implementation hard-coded `#ef4444` for the error border — the
-    // fix is to thread the semantic token through.
-    const rules = css.match(/\.toast-(?:error|info|success|warning)\s*\{[^}]+\}/g) ?? [];
-    expect(rules.length).toBeGreaterThanOrEqual(4);
+    // The surviving CSS rules `.toast-info` and `.toast-success` must
+    // reference `var(--info)` / `var(--success)`, not a raw hex. Phase 126
+    // retired the `.toast-warning` / `.toast-error` variants, so they are
+    // no longer asserted here.
+    const rules = css.match(/\.toast-(?:info|success)\s*\{[^}]+\}/g) ?? [];
+    expect(rules.length).toBeGreaterThanOrEqual(2);
     for (const rule of rules) {
-      expect(rule).toMatch(/var\(--(info|success|warning|error)\)/);
+      expect(rule).toMatch(/var\(--(info|success)\)/);
     }
-  });
-
-  it("does not hard-code the error border-left-color hex", () => {
-    // Belt-and-braces: a regression to `#ef4444` for the toast
-    // border would defeat the dark-mode contrast tuning. The hex
-    // still appears elsewhere (the swatch palette etc.), so we
-    // scope the check to the toast-error rule body.
-    const match = /\.toast-error\s*\{([^}]+)\}/.exec(css);
-    expect(match).not.toBeNull();
-    if (match === null) return;
-    const body = match[1] ?? "";
-    expect(body).not.toMatch(/#[0-9a-f]{3,8}/i);
   });
 });
 

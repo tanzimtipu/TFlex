@@ -15428,3 +15428,39 @@ Steps to reproduce:
 
 Evidence: probe output section F.
 
+## DEF-669: Canvas warning/error notices never mount inside the canvas (Provider clone drops `canvasNotices`)
+
+- Status: CLOSED (qa TFL-1504, 2026-10-09; re-verified on the DEF-669 fix)
+- Severity: HIGH - Phase 126 criterion 1 ("warning/error notices render inside the canvas") fails in the real app; the same mechanism also carries the Phase 78 Protection / Conversion / 3D canvas notices, so none of them re-parent into the canvas in the shipped build.
+- Found by: qa (TFL-1497 phase-close focused verification)
+- Phase: 126
+- Source: TFL-1497 Part 2/3 + 4
+- Numbering note: qa filed this as "DEF-658", but DEF-658 is already the Phase-116 empty-document Thread Stream defect (this file, above). Renumbered by the CTO to DEF-669 (next free; max on file was DEF-668). The qa report/comment still says DEF-658.
+
+Files:
+- `src/renderer/App.tsx:12777-13181` (the `document` element is `<OutlineEditorContext.Provider>` wrapping `DocumentView`)
+- `src/renderer/App.tsx:775-783` (`DocumentSurfaceColumn` threads the notices via `cloneElement(props.document, { canvasNotices: notices })`)
+
+Steps to reproduce:
+1. Launch the dev build (`launchApp`) and open `report.pdf` through the generic Open (Intake).
+2. Press `[data-new-tab]` (empty placeholder becomes active), then tear the empty tab out of the strip.
+3. The DEF-417 refusal pushes the warning "This tab has no document to move." into `errorState.alerts.warning`; on Home the alert box and its collapsed "i" render (confirmed).
+4. Activate the document tab. Expected: the same still-live warning renders inside the canvas as `.canvas-top-right .canvas-notices [data-canvas-alert-notice][data-canvas-alert-tone="warning"]`. Actual: no alert node and no `.canvas-notices` layer at all.
+
+Root cause: In `renderDocument`, `document` is `<OutlineEditorContext.Provider>{BookView|DocumentView}</OutlineEditorContext.Provider>`. `DocumentSurfaceColumn` assigns the notice node with `cloneElement(props.document, { canvasNotices: notices })`. Cloning a context Provider does NOT forward the prop to its child (`renderToStaticMarkup(cloneElement(Provider, {canvasNotices}))` renders the child with `canvasNotices` undefined), so `DocumentView` never receives `canvasNotices` and `.canvas-notices` (DocumentView.tsx:5320-5321) never renders. The unit spec `phase126CanvasAlertRouting.test.tsx` passes only because it feeds a FUNCTION stub (`StubDocument`), where `cloneElement` does forward the prop; it masks the real App path.
+
+Evidence:
+- `npm.cmd run test:e2e -- e2e/phase126_canvas_alert_notice.spec.cjs` -> FAIL: `TimeoutError: waiting for '.canvas-top-right .canvas-notices [data-canvas-alert-notice][data-canvas-alert-tone="warning"]'`. The Home rows still pass.
+- Probe after switching to the document tab: `document.querySelectorAll('.canvas-notices').length === 0` and `[data-canvas-alert-notice]` count `0`, while the Home alert still shows the warning (state is live).
+- `cloneElement` semantics proof (Provider -> `NONE`, function component -> `NOTICE`).
+- Screenshots: `screenshots/phase126-home-alert.png` (alert present on Home), `screenshots/phase126-expanded.png`, `screenshots/phase126-collapsed-i.png`.
+
+Smallest fix (frontend-dev): pass `canvasNotices` to the actual `DocumentView`/`BookView` element, not to the `OutlineEditorContext.Provider` - e.g. move the `OutlineEditorContext.Provider` to wrap the `DocumentSurfaceColumn` result (or clone `props.document.props.children`) so `DocumentView` receives `canvasNotices`.
+
+History:
+- qa (TFL-1497, 2026-10-09): opened (as "DEF-658"; renumbered DEF-669 by the CTO). e2e `phase126_canvas_alert_notice` FAIL; Home rows pass.
+- CTO (2026-10-09): ACCEPTED; renumbered to DEF-669; assigned to frontend-dev as TFL-1498 (the Phase 126 fix); blocks the Phase 126 close.
+- frontend-dev (TFL-1498, 2026-10-09): FIX READY. Restructured `renderDocument` (`App.tsx:12777-13251`): `documentSurface` is the bare BookView/DocumentView element and BOTH returns wrap it in `OutlineEditorContext.Provider`, so `DocumentSurfaceColumn` clones `canvasNotices` onto the real `DocumentView`. `verify` clean; 4 unit specs 37/37; e2e `phase126_canvas_alert_notice` PASS and `phase58_def414_417` 4/4; screenshots refreshed.
+- CTO (2026-10-09): set FIX-READY; assigned qa the re-verification (TFL-1504) to re-run the phase126 e2e + CONTROL-INDEX sweep and re-issue the Phase 126 phase-close verdict.
+- qa (TFL-1504, 2026-10-09): CLOSED. Reproduction fixed on the current tree. `npm.cmd run test:e2e -- e2e/phase126_canvas_alert_notice.spec.cjs e2e/phase58_def414_417.spec.cjs` -> 5/5 PASS (phase126 now PASSES; the final assertion proves `.canvas-top-right .canvas-notices [data-canvas-alert-notice][data-canvas-alert-tone="warning"]` count 1 while the document tab is active; phase58_def414_417 4/4). Fresh canvas evidence `screenshots/phase126-canvas-expanded.png` shows the expanded warning box inside the canvas notice cluster. `npm.cmd run verify` clean (conventions 410 files + tsc). Focused units 11 files / 251 tests PASS: phase126CanvasAlert 7, phase126CanvasAlertRouting 10, phase67NoticeCollapse 13, toastKinds 9, designTokensContract 86, phase58Def414_417 7, activityShelf 21, activityShelfStore 45, activityShelfState 17, activityContract 6, foundationGuards 30. CONTROL-INDEX rows 1-8 all PASS (row 6 canvas placement now PASS). Phase 78 spot-check: a plain 3D PDF opened through the current Intake path renders `.canvas-top-right .canvas-notices [data-pdf3d-notice]` inside `[data-canvas-overlay]` (probe `{"canvasNotices":1,"pdf3dNotice":1,"insideOverlay":true}`; `screenshots/tfl1504-phase78-3d-in-canvas.png`), so the same fix restores the pre-existing Protection/Conversion/3D notices. Phase 126 success criteria 1-7: 1-7 PASS.
+
