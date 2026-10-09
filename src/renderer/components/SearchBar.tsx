@@ -151,10 +151,7 @@ export function SearchBar(props: SearchBarProps) {
         <Icon icon={X} size="sm" />
       </button>
       {replaceMode && (
-        <div
-          className="search-replace-row"
-          style={{ flexBasis: '100%', display: 'flex', alignItems: 'center', gap: "var(--sp-2)" }}
-        >
+        <div className="search-replace-row">
           <input
             className="search-input"
             data-search-replace-input

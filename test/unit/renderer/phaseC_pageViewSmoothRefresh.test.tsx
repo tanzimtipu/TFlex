@@ -125,6 +125,7 @@ function mountPageView(props: Partial<Parameters<typeof PageView>[0]> = {}): Mou
   const noop = (): void => undefined;
   const base = {
     doc: props.doc ?? makeDoc(vi.fn()),
+    tabId: "tab-phaseC",
     page: 1,
     sourcePage: 1,
     widthPt: 612,

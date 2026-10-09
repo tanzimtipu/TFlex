@@ -61,7 +61,10 @@ import {
 } from '../state/dockModel';
 import { resolveDockLadder, type DockLadder } from '../state/dockResponsive';
 import { useRowOverflow } from '../hooks/useRowOverflow';
-import { useInstantMotion } from '../hooks/useAnimations';
+import { useContentCrossfadeAnimation, useInstantMotion, useSelectionPopAnimation } from '../hooks/useAnimations';
+// TFL-1589 — the dock's selection chip and primary verb group animate through
+// AnimatePresence (the same FAST/MICRO selection motion as the panel card).
+import { AnimatePresence, motion } from 'motion/react';
 import { MOTION_DURATION } from '../hooks/motionTokens';
 import {
   DOCK_PILL_GAP,
@@ -864,6 +867,11 @@ export function ActionDock(props: ActionDockProps): ReactElement {
   // (`useInstantMotion`) the ghost is skipped outright, so the change is one
   // instant state change with nothing lingering.
   const instant = useInstantMotion();
+  // TFL-1589 — the selection chip's appear/dismiss and the primary verb
+  // group's stage <-> selection swap share the panel card's selection motion;
+  // the chip's count and the verb group use the FAST/MICRO bands.
+  const selectionPop = useSelectionPopAnimation();
+  const valueCrossfade = useContentCrossfadeAnimation();
   const [enteringIds, setEnteringIds] = useState<ReadonlySet<string>>(() => new Set<string>());
   const [exiting, setExiting] = useState<readonly ExitingVerb[]>([]);
 
@@ -1517,14 +1525,50 @@ export function ActionDock(props: ActionDockProps): ReactElement {
         />
       )}
       <div className="action-dock-scroll" ref={scrollRef} data-dock-scroll>
-        {primaryState === 'selection' && (
-          <span className="action-dock-chip" data-dock-chip>
-            {selectionChipLabel(pageSelection.length)}
-          </span>
-        )}
-        <div className="action-dock-group" key={primaryState} data-dock-group="primary">
-          {renderVerbs(inlineRender, 'primary')}
-        </div>
+        {/* TFL-1589 — the selection chip scale-fades in/out; its count
+            crossfades when the selection size changes. */}
+        <AnimatePresence initial={false}>
+          {primaryState === 'selection' && (
+            <motion.span
+              className="action-dock-chip"
+              data-dock-chip
+              variants={selectionPop}
+              initial="initial"
+              animate="animate"
+              exit="exit"
+            >
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={selectionChipLabel(pageSelection.length)}
+                  data-dock-chip-count
+                  variants={valueCrossfade}
+                  initial="initial"
+                  animate="animate"
+                  exit="exit"
+                >{selectionChipLabel(pageSelection.length)}</motion.span>
+              </AnimatePresence>
+            </motion.span>
+          )}
+        </AnimatePresence>
+        {/* TFL-1589 — the primary verb group dissolves out before the next one
+            blooms in (mode="wait"). Its enter/exit is motion-driven now, so the
+            legacy .action-dock-group CSS keyframe is neutralised on THIS group
+            only; the Phase-59 `.anim-verb-out` ghost is a child animation and is
+            untouched. */}
+        <AnimatePresence mode="wait" initial={false}>
+          <motion.div
+            key={primaryState}
+            className="action-dock-group"
+            data-dock-group="primary"
+            style={{ animation: 'none' }}
+            variants={selectionPop}
+            initial="initial"
+            animate="animate"
+            exit="exit"
+          >
+            {renderVerbs(inlineRender, 'primary')}
+          </motion.div>
+        </AnimatePresence>
         {/* Phase 59 (item 3) — the pins section also stays mounted while a
             ghost is collapsing, so removing the LAST pin still animates out
             before the empty/edit state settles. */}

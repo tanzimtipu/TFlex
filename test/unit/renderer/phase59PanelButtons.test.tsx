@@ -305,15 +305,14 @@ describe("Phase 91 - panel controls compose the canonical button classes", () =>
     });
     try {
       const combine = pages.host.querySelector("[data-context-panel-combine]");
-      // Phase 124 — Combine + Remove blank pages are direct header IconButtons;
-      // the data hooks and canonical button classes live on the buttons.
+      // TFL-1582 — Combine + Remove blank pages are direct header labelled
+      // buttons sharing the Book View secondary treatment; the data hooks and
+      // canonical button classes live on the buttons.
       expect(combine?.classList.contains("btn")).toBe(true);
-      expect(combine?.classList.contains("btn-ghost")).toBe(true);
-      expect(combine?.classList.contains("btn-icon")).toBe(true);
+      expect(combine?.classList.contains("btn-secondary")).toBe(true);
       const blank = pages.host.querySelector("[data-blank-scan-open]");
       expect(blank?.classList.contains("btn")).toBe(true);
-      expect(blank?.classList.contains("btn-ghost")).toBe(true);
-      expect(blank?.classList.contains("btn-icon")).toBe(true);
+      expect(blank?.classList.contains("btn-secondary")).toBe(true);
       // Phase 111 (chunk A) — the retired disclosure is replaced by the
       // navigator view selector, which composes the canonical segmented chrome.
       const pagesTab = pages.host.querySelector('[data-context-panel-view-tab="pages"]');

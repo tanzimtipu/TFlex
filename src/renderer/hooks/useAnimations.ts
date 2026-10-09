@@ -333,6 +333,58 @@ export function usePopAnimation(options: PopOptions = {}): MotionVariantSet {
 }
 
 /* ----------------------------------------------------------------------- */
+/* TFL-1589 — Page-selection surfaces (selection card / dock chip)          */
+/* ----------------------------------------------------------------------- */
+
+/** TFL-1589 — the selection surfaces' scale-fade. Same shape as
+ *  `usePopAnimation({ scale: true })` (scale --motion-scale-enter 0.95 -> 1
+ *  with opacity) but with NO vertical travel — the card and the dock chip
+ *  must never nudge their scroll rows — and the spec's MICRO exit band
+ *  (150ms) instead of the pop's fast one. Enter rides the FAST band. */
+export function useSelectionPopAnimation(): MotionVariantSet {
+  const instant = useInstantMotion();
+  return useMemo<MotionVariantSet>(() => {
+    if (instant) return reducedVariants();
+    return {
+      initial: { opacity: MOTION_OPACITY.hidden, scale: MOTION_SCALE.enter },
+      animate: {
+        opacity: MOTION_OPACITY.visible,
+        scale: 1,
+        transition: { duration: msToSeconds(MOTION_DURATION.fast), ease: MOTION_EASE.enter },
+      },
+      exit: {
+        opacity: MOTION_OPACITY.hidden,
+        scale: MOTION_SCALE.exit,
+        transition: { duration: msToSeconds(MOTION_DURATION.micro), ease: MOTION_EASE.exit },
+        pointerEvents: "none",
+      },
+    };
+  }, [instant]);
+}
+
+/** TFL-1589 — the selection VALUE crossfade: the "N selected" count, the
+ *  range text and the dock chip's count. Opacity-only FAST in / MICRO out,
+ *  so a value change dissolves the old value while the new one materialises
+ *  without the surface ever moving. */
+export function useContentCrossfadeAnimation(): MotionVariantSet {
+  const instant = useInstantMotion();
+  return useMemo<MotionVariantSet>(() => {
+    if (instant) return reducedVariants();
+    return {
+      initial: { opacity: MOTION_OPACITY.hidden },
+      animate: {
+        opacity: MOTION_OPACITY.visible,
+        transition: { duration: msToSeconds(MOTION_DURATION.fast), ease: MOTION_EASE.enter },
+      },
+      exit: {
+        opacity: MOTION_OPACITY.hidden,
+        transition: { duration: msToSeconds(MOTION_DURATION.micro), ease: MOTION_EASE.exit },
+      },
+    };
+  }, [instant]);
+}
+
+/* ----------------------------------------------------------------------- */
 /* Command palette — Scale Fade (the Phase-36 browse-everything surface)     */
 /* ----------------------------------------------------------------------- */
 

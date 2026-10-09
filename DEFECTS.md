@@ -5,6 +5,41 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-679: ActivityAlertNotice unmounts before collapse animation finishes (auto-collapse lifecycle)
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: adversary (ADV-1552-02)
+- Phase: ActivityAlertNotice (TFL-1531 / TFL-1549)
+
+Steps to reproduce:
+1. Build the current tree (`npm.cmd run build`) and launch TFlex via the canonical `launchApp` helper.
+2. Open the scanned sample (`assets/samples/scanned.pdf`) through Home intake.
+3. Run a long operation: Ctrl+K -> "Recognize text" -> Recognize (all pages).
+4. Close the OCR modal.
+5. Wait for the activity notice auto-collapse timeout (~10 s).
+
+Expected: the notice transitions `expanded` -> `closing` -> `collapsed`, leaving a collapsed icon (`[data-activity-alert-icon]`) that can be clicked to re-expand.
+
+Actual: the notice state goes from `expanded` to `null` (component unmounts entirely) because the underlying operation completes and drops out of `activityShelfVisible` before the collapse animation finishes. The collapsed icon never appears, making the notice unreachable after the timeout.
+
+Root cause: `App.tsx:9155-9167` computes `activityAlert` from `activityShelfVisible`. When the operation state becomes `completed`, the `activityShelfVisible` filter removes it after the notice clock retires it (the 1-second clock at :9191-9197). The instant `activityAlert` becomes `undefined`, the host stops rendering `ActivityAlertNotice`, so the component unmounts mid-collapse before `useNoticeCollapse` can reach the `collapsed` phase. The hook's state machine is correct; the host's props lifecycle is too short.
+
+Fix direction: decouple the notice render lifecycle from the operation's shelf membership. Either (a) keep a `previousAlert` ref / lingering state inside `ActivityAlertNotice` (or a small wrapper) so the component renders its last-known props until the collapse hook reaches `collapsed`, or (b) gate unmount on `phase !== 'collapsed'` in the host render path. The fix must NOT resurrect a completed operation's data into the app state — only the notice's local render surface may hold a stale snapshot long enough to finish the exit animation.
+
+Evidence:
+- `e2e/adversary-1552-activity-notice.spec.cjs:298` (ADV-1552-08 probe): `Expected: "collapsed" / Received: null`.
+- Live probe: after OCR completes, `[data-activity-alert-notice]` is removed from DOM while `data-activity-alert-notice-state` on the root was `"expanded"` one frame earlier; no `[data-activity-alert-icon]` ever appears.
+
+Files:
+- `src/renderer/App.tsx:9155-9167` — `activityAlert` memo; host render path that passes it to `DocumentSurfaceColumn`.
+- `src/renderer/components/ActivityAlertNotice.tsx` — may need a lingering-render wrapper.
+- `src/renderer/hooks/useNoticeCollapse.ts` — the collapse state machine (read-only for diagnosis; do not change its contract).
+
+History:
+- adversary: filed ADV-1552-02 2026-10-10 from TFL-1552 phase gate.
+- cto: accepted into DEF-679 2026-10-10. Assigned to frontend-dev.
+
 ## DEF-678: View Strip footer default icon contrast fails in dark theme (1.53:1 vs 3:1 floor)
 
 - Status: OPEN
@@ -64,6 +99,7 @@ Files:
 
 History:
 - qa: filed DEF-677 2026-10-10 from the TFL-1550 focused verification. The notice placement, icon-first enter, 6 px dot size, bold count, dim label, auto-collapse, collapse/expand, retired Activity button/host absence, no-operation empty state, and reduced-motion criteria all pass — only the tone colour channel fails.
+- adversary: confirmed independently as ADV-1552-01 (TFL-1552 phase gate) 2026-10-10.
 
 Severity justification: MEDIUM — the notice still renders, counts and collapses, but its tone signal (dot fill and the violet accent border) is entirely missing, so the notice cannot convey progress/success/warning/danger and the phase's stated visual criteria (6 px dot colour, violet left border distinct from warning/error) fail.
 

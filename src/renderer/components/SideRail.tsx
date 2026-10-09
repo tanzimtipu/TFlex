@@ -1335,6 +1335,24 @@ function Thumb({
     return [{ id: 'page-card', label: `Page ${label}`, entries: rows }];
   }, [thumbVerbs, label]);
 
+  // TFL-1585 — the preview canvas + its border. The wrap is the element that
+  // OWNS the border (`styles.css` `.thumb-canvas-wrap`) and the element the
+  // rotation transform turns (`.thumb-rot-N .thumb-canvas-wrap`), so the frame
+  // turns WITH the page. In CARD mode a sizing frame wraps it: the frame's
+  // layout box is the ROTATED footprint (width/height swap at 90/270), so the
+  // fit-content card hugs the rotated page and nothing spills outside the
+  // frame. Label-only mode keeps the exact previous DOM (canvas wrap directly
+  // inside the preview button).
+  const canvasWrap = (
+    <span className="thumb-canvas-wrap" style={{ width, height }}>
+      <canvas ref={canvasRef} className="thumb-canvas" />
+      {!rendered && <span className="thumb-placeholder" aria-hidden />}
+    </span>
+  );
+  const quarterTurn = rotDeg === 90 || rotDeg === 270;
+  const frameWidth = quarterTurn ? height : width;
+  const frameHeight = quarterTurn ? width : height;
+
   return (
     <div
       ref={(el) => registerThumb(label, el)}
@@ -1464,10 +1482,13 @@ function Thumb({
         aria-label={`Page ${label}`}
         title={pageLabel !== null ? `Page ${label} (label: ${pageLabel})` : `Page ${label}`}
       >
-        <span className="thumb-canvas-wrap" style={{ width, height }}>
-          <canvas ref={canvasRef} className="thumb-canvas" />
-          {!rendered && <span className="thumb-placeholder" aria-hidden />}
-        </span>
+        {cardMode ? (
+          <span className="thumb-frame" style={{ width: frameWidth, height: frameHeight }}>
+            {canvasWrap}
+          </span>
+        ) : (
+          canvasWrap
+        )}
       </button>
       {cardMode ? (
         /* TFL-1465 — the footer row is now an overlay bar pinned to the page

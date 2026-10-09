@@ -146,13 +146,13 @@ describe("Phase 113 — ContextPanel call sites", () => {
     );
   }
 
-  it("renders the page-view tool buttons on the canonical icon primitive", () => {
+  it("renders the page-view tool buttons on the canonical secondary primitive", () => {
     const host = renderPanel();
-    // Phase 124 — the header tool buttons are direct IconButtons.
+    // TFL-1582 — the header tools are labelled buttons on the Book View
+    // secondary treatment (icon + visible text).
     const blank = host.querySelector("[data-blank-scan-open]");
     expect(cls(blank)).toContain("btn");
-    expect(cls(blank)).toContain("btn-ghost");
-    expect(cls(blank)).toContain("btn-icon");
+    expect(cls(blank)).toContain("btn-secondary");
   });
 
   it("renders the navigator view selector on the canonical segmented primitive", () => {
@@ -177,11 +177,11 @@ describe("Phase 113 — ContextPanel call sites", () => {
 
   it("keeps the Combine action's accessible name", () => {
     const host = renderPanel();
-    // Phase 124 — Combine is a direct header icon button; its accessible name
-    // is exposed through aria-label.
+    // TFL-1582 — Combine is a direct header labelled button; its accessible
+    // name is exposed through aria-label.
     const combine = host.querySelector("[data-context-panel-combine]");
     expect(combine?.getAttribute("aria-label")).toBe("Combine with another PDF");
-    expect(cls(combine)).toContain("btn-ghost");
+    expect(cls(combine)).toContain("btn-secondary");
   });
 });
 

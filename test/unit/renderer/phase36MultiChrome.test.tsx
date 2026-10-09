@@ -45,7 +45,7 @@ import { MultiActionDock } from "../../../src/renderer/components/MultiActionDoc
 import { SharedToolController } from "../../../src/renderer/components/multiToolController";
 import {
   initialStageState,
-  stageForPane,
+  stageForScope,
   stageReducer,
   type Stage,
   type StageState,
@@ -211,7 +211,7 @@ function MultiHarness(props: { probes: Probes; api?: HarnessApi }): ReactElement
       canUndo: false,
       annotations: [],
       formFields: [],
-      activeStage: stageForPane(stages, pane),
+      activeStage: stageForScope(stages, null, pane),
       // The Phase 33/34 per-pane strip: A's on its right (its inner edge), B's
       // on its left, so the two strips flank the divider.
       railSide: pane === "A" ? "right" : "left",
@@ -265,7 +265,7 @@ function MultiHarness(props: { probes: Probes; api?: HarnessApi }): ReactElement
       sharedDock: createElement(MultiActionDock, {
         controller,
         pane: multi.focused,
-        activeStage: stageForPane(stages, multi.focused),
+        activeStage: stageForScope(stages, null, multi.focused),
         dockPins: [],
         onPinTool: NOOP,
         onUnpinTool: NOOP,

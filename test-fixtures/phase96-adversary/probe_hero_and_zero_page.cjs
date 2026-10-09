@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const ROOT = 'C:/Users/tanzi/OneDrive/App Development/TFlex';
 const { launchApp, getSamplePath } = require(path.join(ROOT, 'e2e/lib/launch.cjs'));
+const { openSamplePath } = require(path.join(ROOT, 'e2e/lib/helpers.cjs'));
 const out = []; const log = o => { out.push(o); console.log('PROBE ' + JSON.stringify(o)); };
 
 async function setTheme(win, theme) {
@@ -16,8 +17,11 @@ async function setTheme(win, theme) {
   await win.waitForTimeout(400);
 }
 async function openPdf(win, app, f) {
-  await app.evaluate(async ({ dialog }, p) => { dialog.showOpenDialog = async () => ({ canceled:false, filePaths:[p] }); }, f);
-  await win.locator('button:has-text("Open PDF")').first().click();
+  // Phase 118 — generic Open now stages the picked file in the Intake Tray and
+  // its explicit Open finishes the flow, so use the canonical helper. A
+  // zero-page file may not reach a workspace; the passes below record
+  // reachability themselves, so a failure here must not abort the pass.
+  await openSamplePath(win, app, f).catch(() => {});
 }
 async function hero(win, sel) {
   return win.evaluate((s) => { const m = document.querySelector(s); if (!m) return null; const r = m.getBoundingClientRect(); const cs = getComputedStyle(m); return { w:+r.width.toFixed(2), h:+r.height.toFixed(2), cssW:cs.width, cssH:cs.height }; }, sel);
@@ -64,12 +68,16 @@ async function main() {
       await win.waitForTimeout(600);
       for (const theme of ['light','dark','frosted']) {
         await setTheme(win, theme);
+        // TFL-1586 — the "No editable content on this page." placeholder is
+        // removed by design, so its ABSENCE is the expected result. The panel
+        // itself must still be mounted.
         const present = await win.locator('[data-edit-content-empty]').count();
+        const panel = await win.locator('[data-context-panel]').count();
         if (present) {
           await win.waitForTimeout(400);
-          log({ pass:'A', theme, editHero: await hero(win, '[data-edit-content-empty] .empty-state-mark'), stageClicked });
+          log({ pass:'A', theme, editHero: await hero(win, '[data-edit-content-empty] .empty-state-mark'), stageClicked, panel, expected:'absent', ok:false });
         } else {
-          log({ pass:'A', theme, editHero:'selector-absent', stageClicked, panel: await win.locator('[data-context-panel]').count() });
+          log({ pass:'A', theme, editHero:'selector-absent', stageClicked, panel, expected:'absent', ok: panel > 0 });
         }
       }
     } catch(e) { log({ pass:'A', check:'EXCEPTION', error:String(e&&e.message) }); }

@@ -829,6 +829,16 @@
    * edge; its width is a shared token so the arrow's overhang is one
    * number, not a magic value duplicated in the badge rule. */
   --tools-badge-w: 36px;
+  /* DEF-677 — activity role tokens live at :root so every consumer scope
+   * (the retired `.activity-shelf` surface AND `.canvas-top-right`, which
+   * hosts the TFL-1531 alert notice with no shelf ancestor) resolves the
+   * same five roles. Moved verbatim from `.activity-shelf`; the mappings
+   * are unchanged so the shelf surface keeps the exact same palette. */
+  --activity-progress: var(--accent);
+  --activity-success: var(--feedback-success);
+  --activity-warning: var(--warning);
+  --activity-danger: var(--feedback-danger);
+  --activity-neutral: var(--fg-muted);
 }
 
 :root[data-theme="dark"] {
@@ -23279,11 +23289,16 @@ cursor: pointer;
   animation: activity-alert-notice-in var(--motion-duration-standard) var(--motion-ease-enter) both;
 }
 
-.activity-alert-notice[data-activity-alert-tone="progress"] { border-left: 3px solid var(--activity-progress); }
-.activity-alert-notice[data-activity-alert-tone="success"] { border-left: 3px solid var(--activity-success); }
-.activity-alert-notice[data-activity-alert-tone="warning"] { border-left: 3px solid var(--activity-warning); }
-.activity-alert-notice[data-activity-alert-tone="danger"] { border-left: 3px solid var(--activity-danger); }
-.activity-alert-notice[data-activity-alert-tone="neutral"] { border-left: 3px solid var(--activity-neutral); }
+/* DEF-677 — the tone border lives on the same node as the `.canvas-top-right`
+ * base rule whose `border: 1px solid var(--glass-border)` shorthand resets
+ * every edge. Prefixing the tone rules with `.canvas-top-right` matches that
+ * rule's specificity (0,2,0) while adding the attribute selector so the 3 px
+ * left border wins over the shorthand reset. */
+.canvas-top-right .activity-alert-notice[data-activity-alert-tone="progress"] { border-left: 3px solid var(--activity-progress); }
+.canvas-top-right .activity-alert-notice[data-activity-alert-tone="success"] { border-left: 3px solid var(--activity-success); }
+.canvas-top-right .activity-alert-notice[data-activity-alert-tone="warning"] { border-left: 3px solid var(--activity-warning); }
+.canvas-top-right .activity-alert-notice[data-activity-alert-tone="danger"] { border-left: 3px solid var(--activity-danger); }
+.canvas-top-right .activity-alert-notice[data-activity-alert-tone="neutral"] { border-left: 3px solid var(--activity-neutral); }
 
 .activity-alert-notice--leaving {
   animation: activity-alert-notice-out var(--motion-duration-fast) var(--motion-ease-exit) both;
@@ -23315,11 +23330,13 @@ cursor: pointer;
   background: var(--activity-neutral);
 }
 
-.activity-alert-notice-mark[data-activity-alert-role="progress"] { background: var(--activity-progress); }
-.activity-alert-notice-mark[data-activity-alert-role="success"] { background: var(--activity-success); }
-.activity-alert-notice-mark[data-activity-alert-role="warning"] { background: var(--activity-warning); }
-.activity-alert-notice-mark[data-activity-alert-role="danger"] { background: var(--activity-danger); }
-.activity-alert-notice-mark[data-activity-alert-role="neutral"] { background: var(--activity-neutral); }
+/* DEF-677 — the status dot resolves the same activity role tokens. It is
+ * prefixed for the same cluster-scoped consistency as the border rules. */
+.canvas-top-right .activity-alert-notice-mark[data-activity-alert-role="progress"] { background: var(--activity-progress); }
+.canvas-top-right .activity-alert-notice-mark[data-activity-alert-role="success"] { background: var(--activity-success); }
+.canvas-top-right .activity-alert-notice-mark[data-activity-alert-role="warning"] { background: var(--activity-warning); }
+.canvas-top-right .activity-alert-notice-mark[data-activity-alert-role="danger"] { background: var(--activity-danger); }
+.canvas-top-right .activity-alert-notice-mark[data-activity-alert-role="neutral"] { background: var(--activity-neutral); }
 
 .activity-alert-notice-count {
   font-weight: 600;
@@ -24714,13 +24731,12 @@ cursor: pointer;
  * the shared --success / --error roles other categories still consume.
  * State is never colour-only: every role also carries a task icon plus the
  * honest state text, and forced-colors remaps the marks onto system roles.
+ * DEF-677: the five `--activity-*` role tokens moved to `:root` (see the
+ * layout `:root` block) so `.canvas-top-right` alert notices resolve them
+ * without a `.activity-shelf` ancestor. `--activity-radius` and
+ * `--activity-transition` stay shelf-local; nothing else consumes them.
  * ========================================================================= */
 .activity-shelf {
-  --activity-progress: var(--accent);
-  --activity-success: var(--feedback-success);
-  --activity-warning: var(--warning);
-  --activity-danger: var(--feedback-danger);
-  --activity-neutral: var(--fg-muted);
   --activity-radius: 14px;
   --activity-transition: 140ms;
 }

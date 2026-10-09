@@ -3,12 +3,13 @@
 // The reducer is the single owner of the phase's stage invariants, so these
 // tests pin all of them without a DOM:
 //
-//   1. SINGLE mode has exactly one active stage.
+//   1. SINGLE mode tracks a stage PER TAB, so switching one tab's stage never
+//      propagates to another tab.
 //   2. MULTI mode tracks a stage PER PANE: writing pane A can never move
-//      pane B or the single-mode stage.
+//      pane B or any tab's stage.
 //   3. An unknown stage value and an unknown pane id are both REFUSED (state
-//      unchanged) rather than coerced; `stageForPane` falls back to the
-//      single-mode stage for an unknown scope so a surface can never render
+//      unchanged) rather than coerced; `stageForScope` falls back to the
+//      default stage for an unknown scope so a surface can never render
 //      nothing.
 //   4. `Ctrl+1..4` maps to STAGE_ORDER and only the exact chord fires.
 //   5. Every no-op returns the SAME object (identity) so React can skip the
@@ -23,7 +24,7 @@ import {
   isStage,
   stageForCtrlDigit,
   stageForDigit,
-  stageForPane,
+  stageForScope,
   stageReducer,
   stageShortcutLabel,
   stageEffectsNeedApply,
@@ -106,34 +107,87 @@ describe("stage model — Ctrl+1..4", () => {
   });
 });
 
-describe("stage model — single mode", () => {
-  it("starts on the default stage", () => {
-    expect(initialStageState.single).toBe("pages");
+describe("stage model — single mode (per tab)", () => {
+  it("starts every tab on the default stage", () => {
+    expect(initialStageState.perTab).toEqual({});
     expect(initialStageState.panes).toEqual({ A: "pages", B: "pages" });
+    expect(stageForScope(initialStageState, "tab-1", null)).toBe("pages");
+    expect(stageForScope(initialStageState, "tab-2", null)).toBe("pages");
   });
 
-  it("sets the single stage without touching either pane", () => {
-    const next = run(initialStageState, { type: "set", pane: null, stage: "deliver" });
-    expect(next.single).toBe("deliver");
+  it("sets one tab's stage without touching either pane or another tab", () => {
+    const next = run(initialStageState, { type: "set", tabId: "tab-1", stage: "deliver" });
+    expect(stageForScope(next, "tab-1", null)).toBe("deliver");
+    expect(stageForScope(next, "tab-2", null)).toBe("pages");
     expect(next.panes).toEqual({ A: "pages", B: "pages" });
   });
 
-  it("resets the single stage back to the default", () => {
+  it("resets one tab back to the default", () => {
     const next = run(
       initialStageState,
-      { type: "set", pane: null, stage: "review" },
-      { type: "reset", pane: null },
+      { type: "set", tabId: "tab-1", stage: "review" },
+      { type: "reset", tabId: "tab-1" },
     );
-    expect(next.single).toBe("pages");
+    expect(stageForScope(next, "tab-1", null)).toBe("pages");
+  });
+});
+
+describe("stage model — per-tab isolation", () => {
+  it("holds two tabs on different stages simultaneously", () => {
+    const next = run(
+      initialStageState,
+      { type: "set", tabId: "tab-a", stage: "edit" },
+      { type: "set", tabId: "tab-b", stage: "deliver" },
+    );
+    expect(stageForScope(next, "tab-a", null)).toBe("edit");
+    expect(stageForScope(next, "tab-b", null)).toBe("deliver");
+  });
+
+  it("does not change tab B's stage when tab A changes", () => {
+    const before = run(initialStageState, { type: "set", tabId: "tab-b", stage: "review" });
+    const after = run(before, { type: "set", tabId: "tab-a", stage: "deliver" });
+    expect(stageForScope(after, "tab-b", null)).toBe("review");
+    expect(stageForScope(after, "tab-a", null)).toBe("deliver");
+  });
+
+  it("resetting tab A restores the default for that tab only", () => {
+    const before = run(
+      initialStageState,
+      { type: "set", tabId: "tab-a", stage: "deliver" },
+      { type: "set", tabId: "tab-b", stage: "edit" },
+    );
+    const after = run(before, { type: "reset", tabId: "tab-a" });
+    expect(stageForScope(after, "tab-a", null)).toBe("pages");
+    expect(stageForScope(after, "tab-b", null)).toBe("edit");
+    expect("tab-a" in after.perTab).toBe(false);
+  });
+
+  it("closing (resetting) a tab does not affect other tabs' stages", () => {
+    const before = run(
+      initialStageState,
+      { type: "set", tabId: "tab-a", stage: "edit" },
+      { type: "set", tabId: "tab-b", stage: "review" },
+      { type: "set", tabId: "tab-c", stage: "deliver" },
+    );
+    const after = run(before, { type: "reset", tabId: "tab-b" });
+    expect(stageForScope(after, "tab-a", null)).toBe("edit");
+    expect(stageForScope(after, "tab-b", null)).toBe("pages");
+    expect(stageForScope(after, "tab-c", null)).toBe("deliver");
+  });
+
+  it("does not mutate the input state object", () => {
+    const before = initialStageState;
+    run(before, { type: "set", tabId: "tab-1", stage: "deliver" });
+    expect(before.perTab).toEqual({});
   });
 });
 
 describe("stage model — per-pane storage (Multi Mode)", () => {
-  it("writes one pane without moving the other pane or single mode", () => {
+  it("writes one pane without moving the other pane or any tab", () => {
     const next = run(initialStageState, { type: "set", pane: "A", stage: "review" });
     expect(next.panes.A).toBe("review");
     expect(next.panes.B).toBe("pages");
-    expect(next.single).toBe("pages");
+    expect(next.perTab).toEqual({});
   });
 
   it("keeps the two panes independent", () => {
@@ -142,9 +196,9 @@ describe("stage model — per-pane storage (Multi Mode)", () => {
       { type: "set", pane: "A", stage: "edit" },
       { type: "set", pane: "B", stage: "deliver" },
     );
-    expect(stageForPane(next, "A")).toBe("edit");
-    expect(stageForPane(next, "B")).toBe("deliver");
-    expect(stageForPane(next, null)).toBe("pages");
+    expect(stageForScope(next, null, "A")).toBe("edit");
+    expect(stageForScope(next, null, "B")).toBe("deliver");
+    expect(stageForScope(next, null, null)).toBe("pages");
   });
 
   it("resets a pane back to the default", () => {
@@ -161,30 +215,45 @@ describe("stage model — per-pane storage (Multi Mode)", () => {
     const before = initialStageState;
     run(before, { type: "set", pane: "A", stage: "deliver" });
     expect(before.panes.A).toBe("pages");
-    expect(before.single).toBe("pages");
+    expect(before.perTab).toEqual({});
   });
 });
 
 describe("stage model — fallbacks and refusals", () => {
-  it("reads the single stage for a null scope", () => {
-    const state: StageState = { single: "review", panes: { A: "edit", B: "deliver" } };
-    expect(stageForPane(state, null)).toBe("review");
+  it("reads the pane's own stage for a pane scope", () => {
+    const state: StageState = { perTab: {}, panes: { A: "edit", B: "deliver" } };
+    expect(stageForScope(state, "ignored", "A")).toBe("edit");
   });
 
-  it("falls back to the single stage for an unknown pane id", () => {
-    const state: StageState = { single: "review", panes: { A: "edit", B: "deliver" } };
-    expect(stageForPane(state, "C" as unknown as "A")).toBe("review");
+  it("reads a tab's own stage for a tab scope", () => {
+    const state: StageState = { perTab: { "tab-1": "review" }, panes: { A: "edit", B: "deliver" } };
+    expect(stageForScope(state, "tab-1", null)).toBe("review");
   });
 
-  it("falls back to the single stage when a pane slot is missing", () => {
-    const state: StageState = { single: "edit", panes: {} as Record<"A" | "B", Stage> };
-    expect(stageForPane(state, "A")).toBe("edit");
+  it("falls back to the default for an unknown tab id", () => {
+    const state: StageState = { perTab: { "tab-1": "review" }, panes: { A: "edit", B: "deliver" } };
+    expect(stageForScope(state, "tab-2", null)).toBe("pages");
+  });
+
+  it("falls back to the default for an unknown pane id", () => {
+    const state: StageState = { perTab: {}, panes: { A: "edit", B: "deliver" } };
+    expect(stageForScope(state, null, "C" as unknown as "A")).toBe("pages");
+  });
+
+  it("falls back to the default when a pane slot is missing", () => {
+    const state: StageState = { perTab: {}, panes: {} as Record<"A" | "B", Stage> };
+    expect(stageForScope(state, null, "A")).toBe("pages");
+  });
+
+  it("returns the default when there is no scope at all", () => {
+    const state: StageState = { perTab: { "tab-1": "review" }, panes: { A: "edit", B: "deliver" } };
+    expect(stageForScope(state, null, null)).toBe("pages");
   });
 
   it("refuses an unknown stage value", () => {
     const next = stageReducer(initialStageState, {
       type: "set",
-      pane: null,
+      tabId: "tab-1",
       stage: "global" as unknown as Stage,
     });
     expect(next).toBe(initialStageState);
@@ -202,11 +271,13 @@ describe("stage model — fallbacks and refusals", () => {
   it("returns the same object for every no-op (React re-render guard)", () => {
     const state = run(initialStageState, { type: "set", pane: "A", stage: "review" });
     expect(stageReducer(state, { type: "set", pane: "A", stage: "review" })).toBe(state);
-    expect(stageReducer(state, { type: "set", pane: null, stage: "pages" })).toBe(state);
     expect(stageReducer(state, { type: "set", pane: "B", stage: "pages" })).toBe(state);
     expect(stageReducer(state, { type: "reset", pane: "B" })).toBe(state);
-    expect(stageReducer(state, { type: "reset", pane: null })).toBe(state);
     expect(stageReducer(initialStageState, { type: 'reset', pane: 'A' })).toBe(initialStageState);
+    const withTab = run(initialStageState, { type: "set", tabId: "tab-1", stage: "edit" });
+    expect(stageReducer(withTab, { type: "set", tabId: "tab-1", stage: "edit" })).toBe(withTab);
+    expect(stageReducer(withTab, { type: "reset", tabId: "tab-2" })).toBe(withTab);
+    expect(stageReducer(withTab, { type: "set", tabId: "tab-1", stage: "edit" })).toBe(withTab);
   });
 });
 

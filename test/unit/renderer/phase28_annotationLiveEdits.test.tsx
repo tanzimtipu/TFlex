@@ -303,17 +303,16 @@ describe("Phase 28 (d) — the action bar's colour box replaces the Edit text", 
       const children = Array.from(bar.children);
       const boxIndex = children.indexOf(box.closest("span") as Element);
       const confirmIndex = children.findIndex((c) => c.matches("[data-content-action$='-confirm']"));
-      // Phase 117 chunk B — Delete moved behind the separated More control,
-      // so the colour box is ordered between Confirm and that More host.
-      const moreIndex = children.findIndex((c) => c.matches("[data-content-action-more-host]"));
+      // TFL-1573 — Delete is now a direct child (the More control was
+      // removed), so the colour box is ordered between Confirm and Delete.
+      const deleteIndex = children.findIndex((c) => c.matches("[data-content-action$='-delete']"));
       expect(boxIndex).toBeGreaterThan(confirmIndex);
-      expect(boxIndex).toBeLessThan(moreIndex);
-      // Delete is now reachable inside the More menu, not as a direct child.
-      clickEl(bar.querySelector("[data-content-action$='-more']"));
+      expect(boxIndex).toBeLessThan(deleteIndex);
+      // Delete is a direct child of the bar, not inside a More menu.
       expect(
-        bar.querySelector(".content-action-more-menu [data-content-action$='-delete']"),
-        "Delete lives inside the More menu",
-      ).not.toBeNull();
+        bar.querySelector("[data-content-action$='-delete']")?.closest(".content-action-more-menu"),
+        "Delete is inline, not inside a More menu",
+      ).toBeNull();
       // It shows the annotation's current colour.
       expect(box.getAttribute("data-color-current")).toBe(ANNOTATION_COLOR_HEX.blue);
       // A SINGLE click expands the shared picker (portaled to body).

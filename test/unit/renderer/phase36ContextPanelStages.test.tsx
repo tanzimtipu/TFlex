@@ -167,21 +167,18 @@ describe('Phase 36 chunk 6 — the EDIT stage panel', () => {
     }
   });
 
-  it('shows the empty state when the current page has no modelled content', () => {
+  it('collapses the no-content state while keeping the Default font row + Recognition header', () => {
     const { host, unmount } = renderPanel({
       stage: 'edit',
       editContent: [{ id: 'box-9', kind: 'text', label: 'Elsewhere', page: 3, selected: false }],
     });
     try {
-      const empty = host.querySelector('[data-edit-content-empty]');
-      expect(empty).not.toBeNull();
-      // Phase 96-D — the empty surface is the shared designed EmptyState.
-      expect(empty?.classList.contains('empty-state')).toBe(true);
-      expect(empty?.querySelector('.empty-state-headline')?.textContent).toBe(
-        'No editable content on this page.',
-      );
-      expect(empty?.querySelector('.empty-state-mark')).not.toBeNull();
+      expect(host.querySelector('[data-edit-content-empty]')).toBeNull();
       expect(host.querySelectorAll('[data-edit-content-item]').length).toBe(0);
+      expect(host.querySelector('[data-edit-default-font-row]')).not.toBeNull();
+      const recognition = host.querySelector('[data-context-panel-section="recognition"]');
+      expect(recognition).not.toBeNull();
+      expect(recognition?.textContent).toContain('Recognition');
     } finally {
       unmount();
     }

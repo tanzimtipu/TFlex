@@ -251,3 +251,38 @@ describe("Phase 86 — Find bar replace row", () => {
     expect(line?.textContent).toContain("2 replaced, 1 skipped");
   });
 });
+
+// TFL-1569 (B) — the Find input and the Replace input must render as one
+// coherent two-row control: the same class (identical height / padding /
+// radius / border token treatment) and no per-row inline size fork. jsdom
+// lays nothing out, so the pixel-identical WIDTH that makes both edges line
+// up is pinned statically in phase86SearchReplaceCss.test.ts.
+describe("Phase 86 / TFL-1569 — the Find and Replace inputs are one control", () => {
+  it("renders exactly the two shared-class inputs in replace mode", () => {
+    const host = mountSearchBar({ replaceMode: true });
+    const inputs = Array.from(host.querySelectorAll<HTMLInputElement>(".search-input"));
+    expect(inputs.length).toBe(2);
+    expect(inputs[0].classList.contains("search-input")).toBe(true);
+    expect(inputs[1].classList.contains("search-input")).toBe(true);
+    // One shared class -> one height / padding / radius / border token set.
+    expect(inputs[0].className).toBe(inputs[1].className);
+  });
+
+  it("carries no per-row inline height or width on either input", () => {
+    const host = mountSearchBar({ replaceMode: true });
+    const inputs = Array.from(host.querySelectorAll<HTMLInputElement>(".search-input"));
+    // Both measure the same (0 in jsdom); the real guard is that neither
+    // input sets an inline size that would fork the shared .search-input rule.
+    expect(inputs[0].offsetHeight).toBe(inputs[1].offsetHeight);
+    expect(inputs[0].offsetWidth).toBe(inputs[1].offsetWidth);
+    for (const input of inputs) {
+      expect(input.style.height).toBe("");
+      expect(input.style.width).toBe("");
+    }
+  });
+
+  it("does not render the second input when the replace row is closed", () => {
+    const host = mountSearchBar({ replaceMode: false });
+    expect(host.querySelectorAll(".search-input").length).toBe(1);
+  });
+});

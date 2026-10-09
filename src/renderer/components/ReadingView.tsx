@@ -68,6 +68,10 @@ export interface ReadingViewProps {
   /** Comic mode: a host-supplied page renderer. When absent the shared
    *  `PageView` is used with `comicDoc`. */
   renderComicPage?: (pageIndex: number, viewport: ComicViewport) => ReactNode;
+  /** Phase 128 — stable tab identity, threaded to the shared `PageView` so
+   *  it can key the module-level page bitmap cache. Optional (empty id
+   *  when absent). */
+  tabId?: string;
 }
 
 /** The measured comic stage, handed to the page renderer for fit scaling. */
@@ -164,6 +168,7 @@ export function ReadingView(props: ReadingViewProps): ReactElement {
     comicPageCount = 0,
     comicDoc = null,
     renderComicPage,
+    tabId = '',
   } = props;
 
   // ---- EPUB payload -----------------------------------------------------
@@ -307,12 +312,12 @@ export function ReadingView(props: ReadingViewProps): ReactElement {
       if (renderComicPage !== undefined) return renderComicPage;
       if (comicDoc !== null) {
         return (pageIndex: number, viewport: ComicViewport): ReactNode => (
-          <ComicPage doc={comicDoc} index={pageIndex} viewport={viewport} />
+          <ComicPage doc={comicDoc} tabId={tabId} index={pageIndex} viewport={viewport} />
         );
       }
       return undefined;
     },
-    [renderComicPage, comicDoc],
+    [renderComicPage, comicDoc, tabId],
   );
 
   const shown = Math.min(current + 1, Math.max(total, 1));
@@ -740,10 +745,11 @@ const noopAnnotation = (): void => undefined;
  *  the reading surface never animates the page content itself. */
 function ComicPage(props: {
   doc: PDFDocumentProxy;
+  tabId: string;
   index: number;
   viewport: ComicViewport;
 }): ReactElement {
-  const { doc, index, viewport } = props;
+  const { doc, tabId, index, viewport } = props;
   const [dims, setDims] = useState({ width: 612, height: 792 });
   // DEF-395 — the root cause. This callback is passed to `PageView`, whose
   // render effect depends on it (PageView.tsx:825). The old inline arrow was
@@ -772,6 +778,7 @@ function ComicPage(props: {
   return (
     <PageView
       doc={doc}
+      tabId={tabId}
       page={index + 1}
       sourcePage={index + 1}
       widthPt={dims.width}

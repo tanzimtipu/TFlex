@@ -100,10 +100,11 @@ import {
 // pane) is a one-line scope read/write here because the rail component keeps
 // no state of its own.
 import {
+  DEFAULT_STAGE,
   editModeForStage,
   initialStageState,
   stageEffectsNeedApply,
-  stageForPane,
+  stageForScope,
   stageReducer,
   type Stage,
 } from "./state/stages";
@@ -208,6 +209,12 @@ import {
 import { shouldApplyEcho } from "./state/settingsEcho";
 import { openPdfDocument, readOutline, resolveOutlinePage, type OutlineNode } from "./pdf/pdfjs";
 import {
+  clearTabCache,
+  invalidateProxyCache,
+  pruneTabCache,
+  setCachedBitmap,
+} from "./pdf/pageBitmapCache";
+import {
   DocumentView,
   type DocDiagnostics,
   type PersistedViewer,
@@ -235,16 +242,19 @@ import { ConversionNotice } from "./components/ConversionNotice";
 // Phase 126 (chunk B1) — the in-canvas warning/error notice that replaces the
 // retired warning/error toast popups.
 import { CanvasAlertNotice } from "./components/CanvasAlertNotice";
-// TFL-1216 (chunk C4b) — the Activity Shelf surface (summary + panel) and the
-// store that owns its operations. The App mounts the surface once and feeds it
-// operations the OCR producer creates; all transitions stay in the pure store.
-import { ActivityShelfPanel, ActivityShelfSummary } from "./components/ActivityShelf";
+// TFL-1549 — the in-canvas activity summary notice that replaces the retired
+// bottom Activity Shelf surface (pill + panel). It reads the same pure shelf
+// store the shelf did; the App no longer mounts a window-level shelf.
+import { ActivityAlertNotice } from "./components/ActivityAlertNotice";
+import {
+  activityRowText,
+  activityStateRole,
+  type ActivityStateRole,
+} from "./components/ActivityShelf";
 import {
   convertProgressAction,
   convertStartAction,
-  CONVERT_TASK_NAME,
   initialActivityShelfState,
-  OCR_TASK_NAME,
   ocrProgressAction,
   ocrStartAction,
   reduceActivityShelf,
@@ -256,9 +266,8 @@ import {
   UPDATE_OPERATION_ID,
   updateStateAction,
 } from "./state/activityShelf";
-import { createOperation } from "./state/activity";
+import { createOperation, isRunning } from "./state/activity";
 import type {
-  ActivityCompletionAction,
   ActivityFailure,
   ActivityOperation,
 } from "./state/activity";
@@ -692,6 +701,44 @@ export function adoptedModifiedPatch(
   return { tabModified: dirty, engineModified: dirty };
 }
 
+/** ADV-1552-02 — keep a value alive for a short grace period after it becomes
+ *  `undefined`.
+ *
+ *  The in-canvas `ActivityAlertNotice` runs its own `useNoticeCollapse` state
+ *  machine and must stay mounted through `closing -> collapsed` so the
+ *  collapsed icon can appear. The source memo (`activityAlert`) drops to
+ *  `undefined` the instant the last operation leaves `activityShelfVisible`,
+ *  which unmounted the notice mid-collapse. This hook holds the last non-null
+ *  value for `ms` so the collapse animation can finish. A fresh value replaces
+ *  the lingered snapshot immediately (the pending timeout is cancelled), so a
+ *  new operation never waits behind the linger — it is NOT a product-visible
+ *  delay, only a guard against premature unmount. */
+function useLingeringValue<T>(value: T | undefined, ms: number): T | undefined {
+  const [lingered, setLingered] = useState<T | undefined>(value);
+  const timerRef = useRef<number | null>(null);
+  useEffect((): (() => void) => {
+    if (value !== undefined) {
+      setLingered(value);
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    } else if (lingered !== undefined && timerRef.current === null) {
+      timerRef.current = window.setTimeout((): void => {
+        setLingered(undefined);
+        timerRef.current = null;
+      }, ms);
+    }
+    return (): void => {
+      if (timerRef.current !== null) {
+        window.clearTimeout(timerRef.current);
+        timerRef.current = null;
+      }
+    };
+  }, [value, lingered, ms]);
+  return lingered;
+}
+
 // Phase 56 (features A / C) — the document column's flow notices plus the
 // format-gated reader entry, extracted so the reader trigger's independence
 // from the DISMISSIBLE conversion card is pinned by a unit test. The trigger
@@ -712,6 +759,15 @@ export interface DocumentSurfaceColumnProps {
    *  TFL-1533 consolidated the two per-tone boxes into one tone-grouped notice
    *  with a single "i" icon. */
   alert?: { warning: string[]; error: string[] };
+  /** TFL-1549 — the in-canvas activity summary (operation count + the active
+   *  operation's name/status), derived from the shelf store. Replaces the
+   *  retired bottom Activity Shelf pill and panel. */
+  activityAlert?: {
+    count: number;
+    activeName: string;
+    activeText: string;
+    role: ActivityStateRole;
+  };
   /** Phase 57 (feature A) — 3D annotations the app cannot render. Rendered as
    *  a non-dismissible slim bar above the page area, never an overlay. */
   pdf3d?: readonly Pdf3dContent[];
@@ -744,7 +800,8 @@ export function DocumentSurfaceColumn(props: DocumentSurfaceColumnProps): ReactE
     props.conversion !== undefined ||
     (props.pdf3d !== undefined && props.pdf3d.length > 0) ||
     (alert?.warning.length ?? 0) > 0 ||
-    (alert?.error.length ?? 0) > 0 ? (
+    (alert?.error.length ?? 0) > 0 ||
+    props.activityAlert !== undefined ? (
       <>
         {props.protection !== undefined && (
           <ProtectionNotice
@@ -765,6 +822,14 @@ export function DocumentSurfaceColumn(props: DocumentSurfaceColumnProps): ReactE
           (alert.warning.length > 0 || alert.error.length > 0) && (
             <CanvasAlertNotice warning={alert.warning} error={alert.error} />
           )}
+        {props.activityAlert !== undefined && (
+          <ActivityAlertNotice
+            count={props.activityAlert.count}
+            activeName={props.activityAlert.activeName}
+            activeText={props.activityAlert.activeText}
+            role={props.activityAlert.role}
+          />
+        )}
       </>
     ) : undefined;
   // A component document element (DocumentView) takes the notices through the
@@ -954,6 +1019,10 @@ export function App(): ReactElement {
   // this is the Inspector's source for them. Mirrors the text selection: the
   // view owns it, this merely holds what it hands up.
   const [inspectorAnnotationId, setInspectorAnnotationId] = useState<string | null>(null);
+  // TFL-1569 — the FOCUSED pane's live Find state, mirrored up from its
+  // DocumentView so the title-bar Find icon can show its pressed toggle. A
+  // background pane's publish is dropped; the focused pane's wins.
+  const [focusedSearchOpen, setFocusedSearchOpen] = useState(false);
   // Phase 8 — Optimize + Audit Space dialogs. Optimistic state: the
   // dialogs themselves drive the engine IPC; the dialog result is
   // routed back into `openFromBytes` (optimize) or rendered directly
@@ -1328,25 +1397,19 @@ export function App(): ReactElement {
   const [ocrSuspectsByTab, setOcrSuspectsByTab] = useState<Record<string, OcrSuspect[]>>({});
   /** Per-tab "an OCR run has completed on this doc" flag. */
   const [ocrRunByTab, setOcrRunByTab] = useState<Record<string, boolean>>({});
-  // TFL-1216 (chunk C4b) — the app-level Activity Shelf. The pure store owns
-  // the operations; App owns the shelf-open intent, the notice clock and the
-  // hover/focus freeze. The shelf is mounted ONCE for the whole window.
+  // TFL-1216 (chunk C4b) — the app-level activity store. The pure store owns
+  // the operations; TFL-1549 retired the bottom shelf surface and surfaces a
+  // summary through the in-canvas ActivityAlertNotice instead.
   const [activityShelf, dispatchActivityShelf] = useReducer(
     reduceActivityShelf,
     initialActivityShelfState,
   );
-  const [activityShelfOpen, setActivityShelfOpen] = useState(false);
   // The clock `selectVisibleNotices` reads. It only advances while a
-  // `completed` notice is visible and is frozen (no tick) while the shelf is
-  // hovered or focused, which pauses auto-dismiss by construction.
+  // `completed` notice is visible, so a finished operation auto-dismisses from
+  // the summary instead of lingering as a stale icon.
   const [activityShelfNowMs, setActivityShelfNowMs] = useState<number>(
     (): number => Date.now(),
   );
-  const [activityShelfFrozen, setActivityShelfFrozen] = useState(false);
-  // TFL-1216 (chunk C8) - the summary "Activity" trigger. Closing the panel
-  // (Escape or the close control) restores focus to it, so a keyboard user is
-  // never stranded when the non-modal shelf closes.
-  const activityShelfTriggerRef = useRef<HTMLButtonElement | null>(null);
   // Phase 126 (chunk B2) - a settled `failed`/`partial-success` shelf operation
   // no longer renders a shelf notice; its message is routed ONCE into the
   // in-canvas `CanvasAlertNotice`. This ref records which operation ids have
@@ -2418,6 +2481,32 @@ export function App(): ReactElement {
         query: "",
         activeHitIndex: -1,
       };
+      // Phase 128 (chunk B) — eager first-page pre-render. Fire-and-forget:
+      // start rasterizing page 1 at scale 1 the moment the doc resolves so
+      // the bitmap cache is warm by the time `DocumentView` mounts and
+      // `PageView` asks for page 1. This must NOT block the open flow or
+      // delay tab creation, so it is an unawaited `void` IIFE with every
+      // failure swallowed — a pre-render miss only means the normal render
+      // path runs, exactly as before this optimization.
+      void (async () => {
+        try {
+          const page = await doc.getPage(1);
+          const viewport = page.getViewport({ scale: 1 });
+          const offscreen = document.createElement("canvas");
+          offscreen.width = Math.floor(viewport.width);
+          offscreen.height = Math.floor(viewport.height);
+          const ctx = offscreen.getContext("2d", { alpha: false });
+          if (!ctx) return;
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, offscreen.width, offscreen.height);
+          await page.render({ canvasContext: ctx, viewport }).promise;
+          const bitmap = await createImageBitmap(offscreen);
+          setCachedBitmap(id, 1, 1, 0, bitmap);
+          pruneTabCache(id);
+        } catch {
+          /* ignore */
+        }
+      })();
       // Register with the engine. The renderer always talks to the engine
       // (real or stub) so the per-tab state is in place before any ops
       // land.
@@ -2552,6 +2641,10 @@ export function App(): ReactElement {
         }
       }
       dispatchTabs({ type: "open", tab: meta, dedupePath: source.dedupePath });
+      // TFL-1570 — every new tab starts from the default stage context. The
+      // reducer would fall back to the default for an unknown id anyway; the
+      // explicit entry keeps the per-tab stage state inspectable.
+      dispatchStage({ type: "set", tabId: id, stage: DEFAULT_STAGE });
 
       // Phase 4 — kick off the form-field load in the background. The
       // editor overlay renders nothing until loaded is true; we don't
@@ -3241,6 +3334,9 @@ export function App(): ReactElement {
       void removed?.session.doc.destroy().catch(() => undefined);
       return next;
     });
+    // Phase 128 — the closed tab's cached page bitmaps are dead weight;
+    // drop them so the module-level cache cannot outlive its tab.
+    clearTabCache(id);
     setEngineUi((prev) => {
       const { [id]: _drop, ...rest } = prev;
       void _drop;
@@ -3275,6 +3371,9 @@ export function App(): ReactElement {
     // so a freshly-opened tab never inherits stale live-text marks.
     liveAnnTextIdsRef.current.delete(id);
     dispatchTabs({ type: "close", id });
+    // TFL-1570 — drop the closed tab's own stage so a per-tab context never
+    // outlives its tab. Other tabs' stages are untouched.
+    dispatchStage({ type: "reset", tabId: id });
     // Phase 32 — reconcile the Multi Mode panes in the SAME commit as the
     // close so a pane whose document just closed falls back to its empty
     // state without a frame that renders the stale pane (the tab list is
@@ -8839,6 +8938,9 @@ pushToast(
           },
         };
       });
+      // Phase 128 — the proxy identity changed; every cached bitmap is
+      // positioned against the OLD document, so drop the tab's cache.
+      invalidateProxyCache(tabId);
       // The `doc` prop on DocumentView changed identity, which
       // re-runs every doc-bound useEffect. Destroy the old proxy
       // after the swap commits so any in-flight per-page cleanup
@@ -9025,56 +9127,6 @@ pushToast(
     [noteOpApplied],
   );
 
-  /** Resolve the still-open tab that hosts an operation's CAPTURED document.
-   *  Identity is the engine doc id, never "the active tab" - a shelf action
-   *  addresses the document the operation was started for. Returns null when no
-   *  open tab holds that document, which the callers treat as a truthful
-   *  no-op. */
-  const resolveOpenTabForDoc = useCallback(
-    (docId: string, tabId: string): string | null => {
-      const direct = openTabsRef.current[tabId];
-      if (direct !== undefined && direct.session.engineDocId === docId) {
-        return tabId;
-      }
-      for (const candidateId of Object.keys(openTabsRef.current)) {
-        const open = openTabsRef.current[candidateId];
-        if (open !== undefined && open.session.engineDocId === docId) {
-          return candidateId;
-        }
-      }
-      return null;
-    },
-    [],
-  );
-
-  /** DEF-652 - bring a converted document's own `ConversionNotice` (the
-   *  fidelity / warnings card) into view for a conversion `view-details`. The
-   *  card owns its collapse machine, so when it has collapsed to the "i"
-   *  affordance this expands it and then scrolls the card into view. That is
-   *  the real detail; the row is still acknowledged afterwards, but the action
-   *  is never a silent dismiss. */
-  const revealConversionNotice = useCallback((): void => {
-    const reveal = (): void => {
-      const scope =
-        document.querySelector<HTMLElement>('[data-document-converted="true"]') ??
-        document.body;
-      const collapsed = scope.querySelector<HTMLElement>('[data-conversion-icon]');
-      if (collapsed !== null) {
-        collapsed.click();
-        window.requestAnimationFrame((): void => {
-          scope
-            .querySelector<HTMLElement>('[data-conversion-notice]')
-            ?.scrollIntoView?.({ block: 'nearest' });
-        });
-        return;
-      }
-      scope
-        .querySelector<HTMLElement>('[data-conversion-notice]')
-        ?.scrollIntoView?.({ block: 'nearest' });
-    };
-    window.requestAnimationFrame(reveal);
-  }, []);
-
   /** Phase 51 (item 9) — flag the active tab's in-flight OCR run for
    *  cancellation. Wired to the OCR dialog's Cancel control. Main
    *  restores the pre-run bytes and resolves the pending `ocrRecognize`
@@ -9166,6 +9218,30 @@ pushToast(
     return activityShelf.operations.filter((op) => keep.has(op.id));
   }, [activityShelf, activityShelfNowMs]);
 
+  // TFL-1549 — the in-canvas activity summary fed to DocumentSurfaceColumn. The
+  // active row is the first running/queued operation, else the first visible
+  // one; its name + status text and state role drive the notice.
+  const activityAlert = useMemo(() => {
+    if (activityShelfVisible.length === 0) return undefined;
+    const active =
+      activityShelfVisible.find(
+        (op) => isRunning(op.state) || op.state.kind === 'queued',
+      ) ?? activityShelfVisible[0];
+    return {
+      count: activityShelfVisible.length,
+      activeName: active.task.name,
+      activeText: activityRowText(active),
+      role: activityStateRole(active),
+    };
+  }, [activityShelfVisible]);
+
+  // ADV-1552-02 — hold the last notice through its collapse. `activityAlert`
+  // vanishes the moment the operation leaves `activityShelfVisible`; the
+  // linger keeps the host mounted so `useNoticeCollapse` can reach `collapsed`
+  // and the collapsed icon becomes clickable. A new operation replaces this
+  // immediately (the hook cancels the pending timeout).
+  const lingeringActivityAlert = useLingeringValue(activityAlert, 2000);
+
   // Phase 126 (chunk B2) - a settled `failed`/`partial-success` operation now
   // surfaces as the in-canvas `CanvasAlertNotice` instead of a shelf notice.
   // The ref guards against re-pushing the same operation on every shelf change.
@@ -9186,136 +9262,15 @@ pushToast(
     [activityShelf, activityShelfNowMs],
   );
 
-  // Advance the notice clock only while a success notice is visible, and
-  // freeze it while the shelf is hovered or focused so auto-dismiss pauses.
+  // Advance the notice clock only while a success notice is visible so the
+  // completed operation auto-dismisses from the summary.
   useEffect((): (() => void) | undefined => {
-    if (activityShelfFrozen || !activityShelfHasTimedNotice) return undefined;
+    if (!activityShelfHasTimedNotice) return undefined;
     const timer = window.setInterval((): void => {
       setActivityShelfNowMs(Date.now());
     }, 1000);
     return (): void => window.clearInterval(timer);
-  }, [activityShelfFrozen, activityShelfHasTimedNotice]);
-
-  /** Cancel an operation from the shelf. Guarded by the per-operation
-   *  `cancelable` capability (DEF-647): an operation with no cancellation
-   *  channel does not dispatch a request nor fire an engine cancel, so no
-   *  inert Cancel can ever move a non-cancelable op to "Cancelling...". When
-   *  the operation is the running OCR or conversion op it also fires the real
-   *  engine cancel, whose confirmation settles the operation. */
-  const onActivityShelfCancel = useCallback(
-    (id: string): void => {
-      const target = activityShelf.operations.find((op) => op.id === id);
-      if (target === undefined || !target.cancelable) return;
-      dispatchActivityShelf({ type: 'request-cancel', id });
-      const op = ocrShelfOpRef.current;
-      if (op !== null && op.operationId === id) {
-        // DEF-654 — fire the engine cancel for the operation's CAPTURED
-        // document, never whichever tab is active now. A closed tab is a
-        // truthful no-op: the row stays "Cancelling..." until the engine's own
-        // confirmation settles it (or the run resolves on its own).
-        const tabId = resolveOpenTabForDoc(
-          target.document.docId,
-          target.document.tabId,
-        );
-        if (tabId !== null) {
-          const open = openTabsRef.current[tabId];
-          if (open !== undefined) {
-            void engineRef.current.ocrCancel?.(open.session.engineDocId);
-          }
-        }
-        return;
-      }
-      // TFL-1216 (chunk C5) — the conversion's cancel channel, addressed by the
-      // job id (the engine doc id). The engine's own confirmation is what
-      // settles the shelf operation to `cancelled`.
-      const convertOp = convertShelfOpRef.current;
-      if (convertOp !== null && convertOp.operationId === id) {
-        const docId = convertOp.docId;
-        window.tflex.convert?.cancel(docId);
-      }
-    },
-    [activityShelf, resolveOpenTabForDoc],
-  );
-
-  /** Run a completion action. OCR's `view-details` activates the operation's
-   *  ORIGINAL tab and opens the existing suspects panel through the guarded
-   *  `onOpenOcrSuspects` handler (DEF-643); the operation is then acknowledged
-   *  and dropped so no row lingers. A closed tab — or a tab that no longer
-   *  holds the operation's captured document — makes the action a truthful
-   *  no-op, so the panel is never opened against the wrong tab.
-   *  DEF-652 — a conversion's declared `open-result` / `view-details` are REAL:
-   *  `open-result` activates the converted document's tab (the user lands on the
-   *  result); `view-details` does that AND reveals the document-attached
-   *  `ConversionNotice` (the fidelity / warnings card). Both address the
-   *  operation's CAPTURED document, never the active tab; a closed tab is a
-   *  truthful no-op, and the row is acknowledged afterwards so no row lingers.
-   *  Neither action ever routes into another producer's UI (the OCR suspects
-   *  panel). */
-  const onActivityShelfAction = useCallback(
-    (id: string, action: ActivityCompletionAction): void => {
-      const op = activityShelf.operations.find((candidate) => candidate.id === id);
-      if (action === 'view-details' && op?.task.name === OCR_TASK_NAME) {
-        // DEF-643 — honour the operation's captured identity. We never send a
-        // raw setOcrSuspectsOpen(true); the guarded handler checks that OCR
-        // actually ran on this tab, which the B11 fix requires.
-        const opTabId = op.document.tabId;
-        const open = openTabsRef.current[opTabId];
-        if (
-          open !== undefined &&
-          open.session.engineDocId === op.document.docId
-        ) {
-          if (activeTabIdRefLocal.current !== opTabId) activateTab(opTabId);
-          onOpenOcrSuspectsRef.current(opTabId);
-        }
-      } else if (op !== undefined && op.task.name === CONVERT_TASK_NAME) {
-        // DEF-652 — resolve the converted document's still-open tab and land
-        // the user on it. A closed tab is a truthful no-op (never a pretend
-        // success); the row is still acknowledged below because the user acted.
-        const tabId = resolveOpenTabForDoc(
-          op.document.docId,
-          op.document.tabId,
-        );
-        if (tabId !== null) {
-          if (activeTabIdRefLocal.current !== tabId) activateTab(tabId);
-          if (action === 'view-details') revealConversionNotice();
-        }
-      }
-      dispatchActivityShelf({ type: 'acknowledge', id });
-      dispatchActivityShelf({ type: 'remove', id });
-    },
-    [activityShelf, activateTab, resolveOpenTabForDoc, revealConversionNotice],
-  );
-
-  /** Dismiss every visible terminal notice: acknowledge first (hides it from
-   *  `selectVisibleNotices`), then drop it from the store. */
-  const onActivityShelfDismiss = useCallback((): void => {
-    const notices = selectVisibleNotices(activityShelf, activityShelfNowMs);
-    for (const op of notices) {
-      dispatchActivityShelf({ type: 'acknowledge', id: op.id });
-      dispatchActivityShelf({ type: 'remove', id: op.id });
-    }
-  }, [activityShelf, activityShelfNowMs]);
-
-  /** TFL-1216 (chunk C8) - close the shelf panel and hand keyboard focus back
-   *  to the summary trigger (Escape or the close control). The trigger stays
-   *  mounted while the panel is open, so closing never strands focus. */
-  const onActivityShelfClose = useCallback((): void => {
-    setActivityShelfOpen(false);
-    const trigger = activityShelfTriggerRef.current;
-    if (trigger !== null && document.contains(trigger)) trigger.focus();
-  }, []);
-
-  // TFL-1216 (chunk C8) - a completion action removes its row, which can strand
-  // focus on <body>. When that happens while the panel is still open, return
-  // focus to the summary trigger so keyboard navigation continues on the user's
-  // task (a destination surface that takes focus, e.g. the OCR suspects panel,
-  // wins because it moves focus itself).
-  useEffect((): void => {
-    if (!activityShelfOpen) return;
-    if (document.activeElement !== document.body) return;
-    const trigger = activityShelfTriggerRef.current;
-    if (trigger !== null && document.contains(trigger)) trigger.focus();
-  }, [activityShelf, activityShelfOpen]);
+  }, [activityShelfHasTimedNotice]);
 
   /** Navigate to a suspect's page and pulse a short-lived
    *  highlight so the user can spot the word on the page. The
@@ -11350,7 +11305,7 @@ pushToast(
   // writes the FOCUSED pane's stage (each pane owns its stage); single mode
   // drives the one active stage.
   const stagePane: PaneId | null = multiMode.enabled ? multiMode.focused : null;
-  const activeStage: Stage = stageForPane(stageState, stagePane);
+  const activeStage: Stage = stageForScope(stageState, tabs.activeId, stagePane);
   // Phase 39 (DEF-348a) — the shared Action Dock is WORKSPACE-level: when the
   // focused pane is EMPTY it reads the pane that actually owns a document, so
   // it stays present and functional. `resolveDockPane` is the pure rule; the
@@ -11358,7 +11313,7 @@ pushToast(
   const dockPane: PaneId | null = multiMode.enabled
     ? resolveDockPane(multiMode, multiMode.focused)
     : null;
-  const dockStage: Stage = stageForPane(stageState, dockPane);
+  const dockStage: Stage = stageForScope(stageState, null, dockPane);
   // DEF-358 — the shared dock's pressed verb follows the DOCK pane's own edit
   // tool (text/box/image/off). The retired `editMode` verb never matched a
   // rendered verb, so an armed edit tool used to look unarmed in Multi Mode too.
@@ -11370,9 +11325,15 @@ pushToast(
     dockEditTool === null ? [] : [editDockVerbFor(dockEditTool)];
   const onStageChange = useCallback(
     (stage: Stage): void => {
+      if (stagePane === null) {
+        const tabId = tabs.activeId;
+        if (tabId === null) return;
+        dispatchStage({ type: "set", tabId, stage });
+        return;
+      }
       dispatchStage({ type: "set", pane: stagePane, stage });
     },
-    [stagePane],
+    [stagePane, tabs.activeId],
   );
 
   // Phase 37 (item 13) — the stage IS the Edit-mode switch. Entering the
@@ -12433,6 +12394,9 @@ pushToast(
           multiModeEnabled={multiMode.enabled}
           onOpenFind={activeTabHasDocument ? openFindInDocument : undefined}
           findEnabled={activeTabHasDocument}
+          // TFL-1569 — the pressed toggle mirrors the FOCUSED pane's live Find
+          // bar, published up through `onSearchOpenChange`.
+          findOpen={focusedSearchOpen}
           onOpenPreferences={(): void => setPrefsOpen(true)}
           themeDefault={settings.themeDefault ?? settings.theme}
           onThemeChange={onThemeChange}
@@ -12773,6 +12737,7 @@ pushToast(
             const documentSurface = bookViewForPane ? (
               <BookView
                 doc={open.session.doc}
+                tabId={meta.id}
                 pageCount={engine.engineState.pageCount}
                 title={meta.title}
                 defaultLayout={
@@ -12811,6 +12776,7 @@ pushToast(
             ) : (
                   <DocumentView
                     doc={open.session.doc}
+                    tabId={meta.id}
                     pageCount={engine.engineState.pageCount}
                     outline={open.session.outline}
                     initial={open.persisted}
@@ -12822,7 +12788,11 @@ pushToast(
                     // suppressed there), the pins are the validated settings
                     // field, and the app-level verbs are routed through
                     // `onDockToolAction`.
-                    activeStage={stageForPane(stageState, pane)}
+                    activeStage={stageForScope(
+                      stageState,
+                      pane === null ? meta.id : null,
+                      pane,
+                    )}
                     dockPins={dockPins}
                     dockUnpinned={dockUnpinned}
                     dockLadder={dockLadder}
@@ -12852,6 +12822,16 @@ pushToast(
                     onPersist={persistFor(meta.id)}
                     onDiagnostics={diagnosticsFor(meta.id)}
                     onSearchIndexProgress={searchIndexProgressFor(meta.id)}
+                    // TFL-1569 — mirror this pane's live Find state up so the
+                    // title-bar icon reflects the FOCUSED pane. A background
+                    // pane's publish is dropped; single mode (pane null) always
+                    // applies, and a Multi Mode focus switch re-publishes the
+                    // now-focused pane's value.
+                    onSearchOpenChange={(open): void => {
+                      if (pane === null || pane === multiMode.focused) {
+                        setFocusedSearchOpen(open);
+                      }
+                    }}
                     registerSearchIndexInvalidator={(
                       fn,
                     ): void => registerSearchIndexInvalidatorFor(meta.id, fn)}
@@ -13199,13 +13179,20 @@ pushToast(
             const alertHasMessages =
               alert !== undefined &&
               (alert.warning.length > 0 || alert.error.length > 0);
+            // TFL-1549 — the activity summary is window-level, so like `alert`
+            // it mounts only in the ACTIVE tab's canvas, never once per pane.
+            // ADV-1552-02 — use the lingered value so the notice stays mounted
+            // through its collapse after the operation drops out.
+            const tabActivityAlert =
+              meta.id === tabs.activeId ? lingeringActivityAlert : undefined;
             if (
               protection === undefined &&
               conversion === undefined &&
               validation === undefined &&
               sourceFormat === undefined &&
               pdf3d.length === 0 &&
-              !alertHasMessages
+              !alertHasMessages &&
+              tabActivityAlert === undefined
             ) {
               return (
                 <OutlineEditorContext.Provider value={outlineEditorConfig}>
@@ -13223,6 +13210,7 @@ pushToast(
                 protection={protection}
                 pdf3d={pdf3d}
                 alert={alert}
+                activityAlert={tabActivityAlert}
                 onDismissConversion={(): void =>
                   setConvertNotices((prev) => {
                     if (!(meta.id in prev)) return prev;
@@ -13992,35 +13980,6 @@ pushToast(
         }}
       />
       <Toasts items={errorState.toasts} onDismiss={dismissToast} />
-      {/* TFL-1216 (chunk C4b) — the Activity Shelf, mounted ONCE for the whole
-       * window next to the other window-level overlays. The host is the
-       * positioned ancestor the panel expects (`bottom: 100%; right: 0`) and
-       * sits clear of the View Strip footer and the Focus Dock band. Hover or
-       * focus freezes the notice clock so auto-dismiss pauses. */}
-      {activityShelfVisible.length > 0 && (
-        <div
-          className="activity-shelf-host"
-          onMouseEnter={(): void => setActivityShelfFrozen(true)}
-          onMouseLeave={(): void => setActivityShelfFrozen(false)}
-          onFocusCapture={(): void => setActivityShelfFrozen(true)}
-          onBlurCapture={(): void => setActivityShelfFrozen(false)}
-        >
-          {activityShelfOpen && (
-            <ActivityShelfPanel
-              operations={activityShelfVisible}
-              onClose={onActivityShelfClose}
-              onCancel={onActivityShelfCancel}
-              onAction={onActivityShelfAction}
-              onDismiss={onActivityShelfDismiss}
-            />
-          )}
-          <ActivityShelfSummary
-            operations={activityShelfVisible}
-            onOpen={(): void => setActivityShelfOpen(true)}
-            openButtonRef={activityShelfTriggerRef}
-          />
-        </div>
-      )}
       {/* Phase 36 (chunk 4) — the Command Palette. Mounted once for the whole
        * window (so it works on the welcome screen and never doubles up in
        * Multi Mode); every row runs an EXISTING handler, and `Ctrl+Enter` pins
@@ -14048,6 +14007,7 @@ pushToast(
       <ReadingView
         open={readingView !== null}
         mode={readingView?.mode ?? "epub"}
+        tabId={activeTab?.meta.id ?? ""}
         title={activeTab?.meta.title ?? ""}
         sourcePath={activeTab?.meta.filePath ?? ""}
         defaults={settings.readingDefaults ?? DEFAULT_READING_DEFAULTS}

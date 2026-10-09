@@ -1,14 +1,19 @@
-// DEF-342 focused regression (QA, Phase 38 migration): opening/activating a tab
-// while the EDIT stage is active used to reset edit mode while the Stage Rail
-// kept showing EDIT, and re-selecting EDIT did not re-enable it (the stage
-// effect only fired on a stage CHANGE). The fix re-runs the stage effect when a
-// document arrives while the stage is already EDIT, so the edit toolbar returns.
-// This spec now PINS the fixed behaviour (editToolbar === 1 after the reopen and
-// after re-selecting EDIT).
+// DEF-342 focused regression (QA, Phase 38 migration; updated for TFL-1570):
+// switching to a tab while the EDIT stage is active used to reset edit mode
+// while the Stage Rail kept showing EDIT, and re-selecting EDIT did not
+// re-enable it (the stage effect only fired on a stage CHANGE). The fix re-runs
+// the stage effect whenever the active stage becomes applicable again, so the
+// edit surface returns.
+//
+// TFL-1570 made the stage PER TAB (`StageState.perTab`): a newly opened tab
+// starts on the default stage (PAGES) and each tab remembers its own stage.
+// This spec therefore pins the fix through a real TAB SWITCH — tab A in EDIT,
+// switch to a freshly opened tab B (PAGES), switch back to A — the EDIT stage
+// and its edit mode must return while B stays on PAGES.
 const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, openSamplePath } = require('./lib/helpers.cjs');
 
 const log = (label, obj) => console.log(`[DEF342] ${label} ${JSON.stringify(obj)}`);
 
@@ -47,16 +52,13 @@ async function armEditText() {
 }
 
 test('DEF-342: EDIT stage returns its edit mode after a tab switch (fixed)', async () => {
-  // Pane = report.pdf.
+  // Tab A = report.pdf. Phase 118: generic Open enqueues into Intake, so drive
+  // the current shared helper (real Open control + Intake Tray Open button).
   const report = getSamplePath('report.pdf');
-  await app.evaluate(async ({ dialog }, fp) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fp] });
-  }, report);
-  await win.locator('[data-toolbar-open]').first().click();
-  await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
+  await openSamplePath(win, app, report);
   await win.waitForTimeout(1000);
 
-  // Enter EDIT: the stage is the switch, so edit mode turns on.
+  // Enter EDIT in tab A: the stage is the switch, so edit mode turns on.
   await win.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); });
   await win.keyboard.press('Control+2');
   await win.waitForTimeout(600);
@@ -66,22 +68,32 @@ test('DEF-342: EDIT stage returns its edit mode after a tab switch (fixed)', asy
   expect(inEdit.stage, 'the EDIT stage is active').toBe('edit');
   expect(inEdit.editLayer, 'entering EDIT enables edit mode (the edit layer mounts)').toBeGreaterThan(0);
 
-  // Close the only tab while in EDIT, then open a document again.
-  await win.locator('.tab-active .tab-close').click();
-  await win.waitForTimeout(1500);
-  const afterClose = await state();
-  log('after-close', afterClose);
-  const long = getSamplePath('long.pdf');
-  await app.evaluate(async ({ dialog }, fp) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fp] });
-  }, long);
-  await win.locator('[data-toolbar-open]').first().click();
-  await win.waitForTimeout(2000);
-  await armEditText();
-  const afterOpen = await state();
-  log('after-open', afterOpen);
+  const tabA = await win.evaluate(() => {
+    const el = document.querySelector('.tab-area [role="tab"][aria-selected="true"]');
+    return el ? el.getAttribute('data-tab-id') : null;
+  });
+  expect(tabA, 'tab A is the active tab').not.toBeNull();
 
-  // Re-select the EDIT stage (already active): a no-op.
+  // Open a SECOND document: TFL-1570 gives every new tab its own stage, so the
+  // fresh tab B starts on the default stage (PAGES) and edit mode is off.
+  const long = getSamplePath('long.pdf');
+  await openSamplePath(win, app, long);
+  await win.waitForTimeout(1200);
+  const tabB = await state();
+  log('tab-b', tabB);
+  expect(tabB.stage, 'a newly opened tab starts on the default stage').toBe('pages');
+  expect(tabB.editLayer, 'edit mode is off on the fresh tab').toBe(0);
+
+  // Switch BACK to tab A: its own EDIT stage returns, and edit mode with it.
+  await win.locator(`[data-tab-id="${tabA}"]`).click();
+  await win.waitForTimeout(800);
+  await armEditText();
+  const afterSwitch = await state();
+  log('after-switch', afterSwitch);
+  expect(afterSwitch.stage, 'tab A still shows EDIT after switching away and back').toBe('edit');
+  expect(afterSwitch.editLayer, 'edit mode returns when the tab in EDIT is re-activated').toBeGreaterThan(0);
+
+  // Re-select the EDIT stage (already active): a no-op that must keep edit mode.
   await win.evaluate(() => { if (document.activeElement instanceof HTMLElement) document.activeElement.blur(); });
   await win.keyboard.press('Control+2');
   await win.waitForTimeout(600);
@@ -98,8 +110,7 @@ test('DEF-342: EDIT stage returns its edit mode after a tab switch (fixed)', asy
   const afterCycle = await state();
   log('after-cycle', afterCycle);
 
-  expect(afterOpen.stage, 'the rail still shows EDIT after the tab switch').toBe('edit');
-  expect(afterOpen.editLayer, 'edit mode returns when a document arrives while the stage is EDIT').toBeGreaterThan(0);
+  expect(afterReselect.stage, 're-selecting EDIT keeps the stage').toBe('edit');
   expect(afterReselect.editLayer, 're-selecting EDIT keeps edit mode').toBeGreaterThan(0);
   expect(afterCycle.editLayer, 'a real stage change keeps it').toBeGreaterThan(0);
 });

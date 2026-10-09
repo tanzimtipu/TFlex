@@ -142,6 +142,7 @@ function mountPageView(doc: PDFDocumentProxy): PageMount {
     root.render(
       <PageView
         doc={doc}
+        tabId="tab-def303"
         page={1}
         sourcePage={1}
         widthPt={612}

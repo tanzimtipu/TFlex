@@ -13,13 +13,14 @@
 // result into the stage. All the phase's structural invariants live here
 // so they can be unit-tested without a DOM:
 //
-//   - SINGLE mode has exactly ONE active stage.
+//   - SINGLE mode tracks a stage PER TAB, keyed by the tab id, so switching
+//     a mode in one tab never propagates to another tab.
 //   - MULTI mode tracks a stage PER PANE, keyed by the pane id, so each
 //     pane owns its stage (Phase 36 criterion 10) and the two panes can
 //     never share one mutable slot.
 //   - An unknown stage value is refused (state unchanged) rather than
-//     coerced, and an unknown pane id falls back to the single-mode stage
-//     (there is no third pane — `PaneId` has two members).
+//     coerced, and an unknown pane id / tab id falls back to the default
+//     stage (there is no third pane — `PaneId` has two members).
 //   - Every no-op returns the SAME object (identity) so React can skip
 //     the re-render.
 //   - `Ctrl+1..4` maps to STAGE_ORDER and nothing else.
@@ -90,33 +91,46 @@ export function stageForCtrlDigit(event: StageKeyEvent): Stage | null {
 }
 
 export interface StageState {
-  /** SINGLE mode: the one active stage. */
-  single: Stage;
+  /** SINGLE mode: one stage per tab, keyed by the tab id. An unknown tab id
+   *  falls back to the default stage, so a fresh tab renders the default
+   *  context until it is explicitly initialised. */
+  perTab: Record<string, Stage>;
   /** MULTI mode: one stage per pane, keyed by the pane id. */
   panes: Record<PaneId, Stage>;
 }
 
 export const initialStageState: StageState = {
-  single: DEFAULT_STAGE,
+  perTab: {},
   panes: { A: DEFAULT_STAGE, B: DEFAULT_STAGE },
 };
 
 export type StageAction =
-  /** Set a stage. `pane: null` targets SINGLE mode; a pane id targets that
-   *  pane's own stage. An unknown stage value is refused. */
-  | { type: 'set'; pane: PaneId | null; stage: Stage }
-  /** Return a scope to the default stage (PAGES). */
-  | { type: 'reset'; pane: PaneId | null };
+  /** Set a stage. A `pane` id targets that pane's own (MULTI mode) stage; a
+   *  `tabId` targets that tab's own (SINGLE mode) stage. An unknown stage
+   *  value or pane id is refused. */
+  | { type: 'set'; tabId?: string; pane?: PaneId; stage: Stage }
+  /** Return a scope to the default stage (PAGES). A `pane` id resets that
+   *  pane; a `tabId` drops that tab's stored stage (it reads the default
+   *  again). */
+  | { type: 'reset'; tabId?: string; pane?: PaneId };
 
 /**
- * The stage in force for a scope. `pane: null` is SINGLE mode; an
- * unknown/unfilled pane id falls back to the single-mode stage (there is
- * no third pane, and a missing scope must never render nothing).
+ * The stage in force for a scope. A `pane` id reads that pane's own stage
+ * (MULTI mode); otherwise a `tabId` reads that tab's own stage (SINGLE mode),
+ * falling back to the default for an unknown/unfilled tab. With neither, the
+ * default stage is returned so a surface can never render nothing.
  */
-export function stageForPane(state: StageState, pane: PaneId | null): Stage {
-  if (pane === null) return state.single;
-  if (!isPaneId(pane)) return state.single;
-  return state.panes[pane] ?? state.single;
+export function stageForScope(
+  state: StageState,
+  tabId: string | null,
+  pane: PaneId | null,
+): Stage {
+  if (pane !== null) {
+    if (!isPaneId(pane)) return DEFAULT_STAGE;
+    return state.panes[pane] ?? DEFAULT_STAGE;
+  }
+  if (tabId !== null) return state.perTab[tabId] ?? DEFAULT_STAGE;
+  return DEFAULT_STAGE;
 }
 
 /**
@@ -155,20 +169,30 @@ export function stageReducer(state: StageState, action: StageAction): StageState
   switch (action.type) {
     case 'set': {
       if (!isStage(action.stage)) return state;
-      if (action.pane === null) {
-        return state.single === action.stage ? state : { ...state, single: action.stage };
+      if (action.pane !== undefined) {
+        if (!isPaneId(action.pane)) return state;
+        if (state.panes[action.pane] === action.stage) return state;
+        return { ...state, panes: { ...state.panes, [action.pane]: action.stage } };
       }
-      if (!isPaneId(action.pane)) return state;
-      if (state.panes[action.pane] === action.stage) return state;
-      return { ...state, panes: { ...state.panes, [action.pane]: action.stage } };
+      if (action.tabId !== undefined) {
+        if (state.perTab[action.tabId] === action.stage) return state;
+        return { ...state, perTab: { ...state.perTab, [action.tabId]: action.stage } };
+      }
+      return state;
     }
     case 'reset': {
-      if (action.pane === null) {
-        return state.single === DEFAULT_STAGE ? state : { ...state, single: DEFAULT_STAGE };
+      if (action.pane !== undefined) {
+        if (!isPaneId(action.pane)) return state;
+        if (state.panes[action.pane] === DEFAULT_STAGE) return state;
+        return { ...state, panes: { ...state.panes, [action.pane]: DEFAULT_STAGE } };
       }
-      if (!isPaneId(action.pane)) return state;
-      if (state.panes[action.pane] === DEFAULT_STAGE) return state;
-      return { ...state, panes: { ...state.panes, [action.pane]: DEFAULT_STAGE } };
+      if (action.tabId !== undefined) {
+        if (!(action.tabId in state.perTab)) return state;
+        const nextPerTab = { ...state.perTab };
+        delete nextPerTab[action.tabId];
+        return { ...state, perTab: nextPerTab };
+      }
+      return state;
     }
   }
 }

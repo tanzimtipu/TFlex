@@ -141,6 +141,9 @@ interface AppHeaderProps {
   /** Whether a document is open to search: the Find control disables (with a
    *  reason in its tooltip) when false. */
   findEnabled?: boolean;
+  /** TFL-1569 — whether the focused pane's find bar is currently open, so the
+   *  top-bar icon can show a pressed toggle state. */
+  findOpen?: boolean;
   /** Phase 127 (v1.50.0 restore) — the saved theme preference the dropdown
    *  marks as selected (falls back to the concrete theme when unset). */
   themeDefault?: ThemeDefault;
@@ -170,6 +173,7 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
     multiModeEnabled = false,
     onOpenFind,
     findEnabled = false,
+    findOpen = false,
     themeDefault,
     onThemeChange,
     commandSurface = "document",
@@ -389,9 +393,10 @@ export function AppHeader(props: AppHeaderProps): ReactElement {
         {onOpenFind !== undefined && commandSurface !== "home" && (
           <button
             type="button"
-            className="btn btn-ghost btn-icon header-find"
+            className={`btn btn-ghost btn-icon header-find${findOpen ? " btn-toggle" : ""}`}
             onClick={onOpenFind}
             disabled={!findEnabled}
+            aria-pressed={findOpen}
             aria-label={FIND_IN_DOCUMENT_ACCESSIBLE_NAME}
             title={findEnabled ? "Find in document (Ctrl+F)" : "Open a document to search it"}
             data-header-find

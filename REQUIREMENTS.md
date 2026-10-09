@@ -1893,8 +1893,7 @@ and re-homed, never rewritten.
 - **Command palette**: `Ctrl+K` opens it (fuzzy search across every tool, recent file and view action) and
   it supersedes the All-tools panel as the browse-everything surface. `Ctrl+Shift+P` stays a legacy alias.
   **Pin a result to the dock with `Ctrl+Enter`.** `Ctrl+P` remains PRINT and must not be re-bound.
-- **Stages**: `Ctrl+1..4` switch PAGES/EDIT/REVIEW/DELIVER. Stage state is per pane (Multi Mode tracks a
-  stage per pane). The Stage Rail is 44px, full height, four icon+label buttons with the settings gear at
+- **Stages**: `Ctrl+1..4` switch PAGES/EDIT/REVIEW/DELIVER. Stage state is per tab in single mode and per pane in multi mode. The Stage Rail is 44px, full height, four icon+label buttons with the settings gear at
   its bottom, and collapses to icon-only below a 1100px window width.
 - **One moving part**: switching stage swaps ONLY the left context panel, the dock contents and the
   inspector contents. The title bar, Stage Rail, canvas and floating pills never move.
@@ -9290,4 +9289,77 @@ channel or IPC, and stays renderer-only and offline (no network call).
 **Settings impact:** none - the restored theme dropdown reuses the existing `theme` / `themeDefault` `AppSettings` fields and the existing settings read/write IPC; no new field, no IPC shape change, no `src/shared/` contract change.
 
 **Numbering:** this is Phase 127 (the last appended phase is 126).
+
+---
+
+## Phase 128 - Scanned document instant canvas: page bitmap cache and eager first-page pre-render (phase issue TFL-1571; CEO commission from TFL-1565, 2026-10-10)
+
+**Operator request (product terms, TFL-1565 / TFL-1571).** Scanned (image-only) PDFs must appear in the document canvas "almost instantly" when a document tab is opened and when switching to an already-open tab. Currently, opening or switching to a scanned document can leave the user on a blank canvas for multiple seconds while the embedded page image is decoded and rasterized. The fix must preserve existing rendering fidelity and must not regress non-scanned PDF handling. Offline renderer-side change only; no main-process, no network, no IPC contract change.
+
+**CTO rulings:**
+
+1. **Root cause: no renderer-level page bitmap cache + eager pre-render.** pdf.js keeps decoded image caches inside the worker, but `PDFDocumentProxy.cleanup()` — fired by the idle cleanup coordinator after 5 s of quiet — flushes them. A backgrounded tab that has been inactive can lose its warm worker caches, and even when they are warm, `pageProxy.render()` still re-rasterizes the full operator list to the canvas on the main thread. For a scanned page this re-rasterization is a large `drawImage` of a decoded JPEG/JPX bitmap, which blocks the main thread and multiplies when the page has been backgrounded. The fix is a **persistent renderer-side page bitmap cache** keyed by tab + page + scale + rotation, plus an **eager first-page render** immediately after `openPdfDocument` resolves.
+
+2. **Cache lives in a new `src/renderer/pdf/pageBitmapCache.ts` module keyed by `(tabId, sourcePage, cssScale, rotation)` proxy-identity tuple.** Storage is `ImageBitmap` (via `createImageBitmap`) or a snapshot `HTMLCanvasElement` so the next time the same page at the same scale and rotation is needed, `PageView` draws from the cache instantly and skips `pageProxy.render()`. The cache is bounded per tab (last 24 rendered pages) to avoid unbounded memory growth. When a tab is closed, its cache is discarded. The module exposes pure functions: `getCachedBitmap(tabId, sourcePage, cssScale, rotation) -> ImageBitmap | null`, `setCachedBitmap(...)`, `pruneTabCache(tabId, maxEntries)`, `clearTabCache(tabId)`, `invalidateProxyCache(tabId)`.
+
+3. **Eager first-page pre-render on open.** After `openPdfDocument` resolves in `App.tsx:openFromBytes` (line ~2344), immediately do `doc.getPage(1)`, render at scale 1 into an offscreen canvas, create an `ImageBitmap`, and store it in the session cache under the computed tab id. Do NOT block the open flow — wrap in `void` and swallow errors. When `DocumentView` mounts and asks for page 1, `PageView` hits the cache and blits immediately, then optionally refreshes from pdf.js in the background if the final fit scale differs.
+
+4. **PageView.tsx integration point.** The render `useEffect` in `PageView.tsx` starting at line 450 is the single integration point. After `shouldRender` is true and before `doc.getPage(sourcePage)`, check the cache. If a bitmap exists for the exact `(tabId, sourcePage, cssScale, rotation)` key: draw it onto `canvasRef.current` via `drawImage`, set `paintedFrameRef.current = true`, call `onRenderStart` / `onRenderEnd`, set `renderedScale`, and return early — skipping `pageProxy.render()` and the `TextLayer` build. After a successful full render (the scratch canvas is blitted onto the visible canvas at line ~796), create `createImageBitmap(scratch)` and store it, then `pruneTabCache(tabId)`. Ensure the B15 white-fill contract is honoured: cached bitmaps already contain the white fill from the scratch canvas.
+
+5. **Text layer handling on cache hit.** The cache is for the canvas bitmap only. `TextLayer` construction is expensive but does not block visual first paint. On a cache hit, skip `TextLayer` creation in the initial draw; the text layer will be rebuilt the next time the page is rendered without a cache hit (e.g., after a zoom/rotation change). For the open path, the eager pre-render has no text layer — `DocumentView` will build it normally on first real render.
+
+6. **Invalidate cache on proxy refresh / edit / zoom / rotation.** When `doc` identity changes (proxy refresh after engine edit), `refreshDocProxyFor` in `App.tsx` (line ~8780) must call `invalidateProxyCache(tabId)` (which is `clearTabCache(tabId)`) so stale bitmaps are not reused. When `cssScale` or `rotation` changes, the key naturally misses and a new render populates the cache. When `pageOrder` changes (delete/reorder), the cache key uses `sourcePage`, so source pages that moved maintain their bitmap; deleted pages are implicitly pruned by `clearTabCache` or by natural key miss.
+
+7. **Do not change the idle cleanup policy.** The existing 5-second idle cleanup and `doc.cleanup()` are correct for memory bounding; the bitmap cache sits above them and decouples visual responsiveness from worker-side cache lifetime.
+
+8. **Performance budget.** After the fix, opening the bundled `assets/samples/scanned.pdf` (6 pages, ~400 KB per page image) from the Home screen must paint the first page in the canvas within **500 ms** from the moment the tab becomes active. Switching back to an already-open `scanned.pdf` tab must paint the first page within **100 ms**. These numbers are measured by a benchmark e2e spec on a dev build.
+
+9. **No regression on non-scanned documents.** Existing text-heavy PDFs must open/switch at the same or faster speed. The bitmap cache should be a net win because a rendered page is now reusable.
+
+10. **Settings impact: none** — no new `AppSettings` field, no IPC contract change, no `src/shared/` change.
+
+**Features**
+
+**A. Implement session-level page bitmap cache + PageView integration (frontend-dev, chunk A).**
+- Create `src/renderer/pdf/pageBitmapCache.ts` with module-level `Map<string, CacheEntry>` where key is `${tabId}:${sourcePage}:${cssScale}:${rotation}` and value is `{ bitmap: ImageBitmap, page: number, sourcePage: number, cssScale: number, rotation: number, timestamp: number }`.
+- Export `getCachedBitmap`, `setCachedBitmap`, `pruneTabCache(tabId, maxEntries = 24)`, `clearTabCache(tabId)`, `invalidateProxyCache(tabId)`.
+- Modify `src/renderer/components/PageView.tsx:useEffect` (line 450): after confirming `shouldRender === true`, before calling `doc.getPage(sourcePage)`, query the cache. If a bitmap matches, draw it onto `canvasRef.current` via `drawImage`, set `paintedFrameRef.current = true`, wire `onRenderStart` / `onRenderEnd`, set `renderedScale = cssScale`, and return early.
+- After the existing scratch-canvas blit (line ~796), do `createImageBitmap(scratch)` and `setCachedBitmap(tabId, sourcePage, cssScale, rotation, bitmap)` followed by `pruneTabCache(tabId)`.
+- In `src/renderer/App.tsx:refreshDocProxyFor` (line ~8780): after swapping the new proxy, call `invalidateProxyCache(tabId)`.
+- In `src/renderer/App.tsx:performCloseTab` (line ~3223): after removing the tab entry, call `clearTabCache(tabId)`.
+- Write `test/unit/renderer/pageBitmapCache.test.ts` with at least 6 tests: key generation, hit/miss, set/get, LRU prune order, clearTab, createImageBitmap mock integration.
+- Run `npm.cmd run verify` and `npm.cmd run test:unit -- test/unit/renderer/pageBitmapCache.test.ts`. Run blast-radius `npm.cmd run test:unit -- PageView DocumentView`. Report command + output. Run the `doc-maintenance` skill before reporting done.
+
+**B. Eager first-page pre-render on document open (frontend-dev, chunk B).**
+- In `src/renderer/App.tsx:openFromBytes` (line ~2360, after `const doc = parsed.doc;`): add an eager background render of page 1. Use `doc.getPage(1)` -> `page.getViewport({ scale: 1 })` -> render into an offscreen canvas at scale 1. Create `ImageBitmap` from the canvas and store it in the page bitmap cache under the computed tab id with key `(sourcePage=1, cssScale=1, rotation=0)`. Wrap in `void` and catch errors — must not block open.
+- Verify that open of `scanned.pdf` from the Home screen is visually faster. Run `npm.cmd run verify` and the targeted unit test. Blast-radius: open-path specs (`def300OpenPathRouting`, `phase1_open*`). Blocked by A.
+
+**C. Benchmark e2e spec and focused verification (qa, chunk C).**
+- Task type: Phase validation. Write `e2e/tfl1571_scanned_instant.spec.cjs` that: launches the dev app via `e2e/lib/launch.cjs`, opens the bundled `assets/samples/scanned.pdf` from the Home screen, measures the time from click to a non-zero canvas width/height on `[data-page="1"] canvas` (MutationObserver on canvas dimensions), asserts <= 500 ms; then opens `report.pdf`, switches back to the scanned tab, and asserts the scanned page reappears <= 100 ms.
+- Run the spec and report pass/fail with timing numbers.
+- Also run `npm.cmd run verify` and existing rendering-related e2e specs as blast radius.
+- Blocked by B.
+
+**D. Adversarial diff-pass (adversary, chunk D).**
+- Task type: diff-pass. Attack the cache: rapid tab open/close/switch 20 times with `scanned.pdf`, verify no memory leak (DevTools Memory snapshot before/after); verify no stale bitmap after zoom/rotation; verify cache eviction works (open 30 different pages, oldest re-render cleanly); verify proxy refresh after an edit shows post-edit content, not pre-edit cached bitmap.
+- Record findings in `ADVERSARIAL_REVIEW.md` (session: diff-pass). Blocked by C.
+
+**E. Phase-close local commit (git-agent, chunk E).**
+- Stage and commit all phase-produced tracked changes: `src/renderer/pdf/pageBitmapCache.ts`, `src/renderer/components/PageView.tsx`, `src/renderer/App.tsx`, new unit test `test/unit/renderer/pageBitmapCache.test.ts`, e2e spec `e2e/tfl1571_scanned_instant.spec.cjs`, the Phase 128 REQUIREMENTS.md entry, regenerated `docs/phase-specs/`, and any doc/ledger change. Imperative commit message referencing Phase 128 and TFL-1571. No push, no tag. Blocked by D.
+
+**Success criteria**
+
+1. **Scanned document open is instant.** Opening `scanned.pdf` from the Home screen paints the first page in the canvas within 500 ms, measured by the e2e benchmark.
+2. **Scanned document switch is instant.** Switching back to an already-open `scanned.pdf` tab paints the first page within 100 ms.
+3. **No canvas blanking on switch.** No multi-second blank canvas when switching to a scanned tab.
+4. **No UI freeze.** The main thread is not blocked during open or switch; `pageProxy.render()` is avoided on cache hits.
+5. **Memory bounded.** The per-tab bitmap cache is capped (24 entries default) and cleared on tab close; the adversary verifies no unbounded growth.
+6. **No regression.** Non-scanned PDFs open/switch at the same or faster speed. Existing rendering fidelity, annotation overlays, form fields, and text selection are unchanged. `npm.cmd run verify` and all existing rendering-related e2e specs pass.
+7. **Measured evidence.** The e2e benchmark records before/after timing for `scanned.pdf`. A unit test guards cache hit/miss behavior.
+
+**CONTROL-INDEX:** this phase introduces no new user-visible controls. Guarded surfaces: the existing `PageView` canvas render path still paints correctly (blast-radius PageView specs); the tab switch path remains responsive (`e2e/tfl1571_scanned_instant.spec.cjs`); the open path shows the first page quickly (`e2e/tfl1571_scanned_instant.spec.cjs`).
+
+**Settings impact:** none — no new `AppSettings` field, no IPC shape change, no `src/shared/` contract change.
+
+**Numbering:** this is Phase 128 (the last appended phase is 127).
 

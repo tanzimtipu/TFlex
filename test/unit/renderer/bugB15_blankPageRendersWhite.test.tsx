@@ -104,6 +104,7 @@ describe("B15 — blank pages render white, not black", () => {
       root.render(
         <PageView
           doc={doc as unknown as PDFDocumentProxy}
+          tabId="tab-b15"
           page={1}
           sourcePage={1}
           widthPt={612}

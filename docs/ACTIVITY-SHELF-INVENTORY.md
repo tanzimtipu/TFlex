@@ -230,3 +230,28 @@ selector or producer.
 Pinned by `test/unit/renderer/activityShelfStore.test.ts` (the convert
 capability case plus the two terminal-recovery cases).
 
+## TFL-1549 — the bottom shelf surface is retired for an in-canvas notice
+
+The App no longer mounts the window-level Activity Shelf. The
+`.activity-shelf-host`, `ActivityShelfPanel` and `ActivityShelfSummary` render
+block is gone from `src/renderer/App.tsx`, together with `activityShelfOpen` /
+`activityShelfFrozen`, the `activityShelfTriggerRef`, the
+`onActivityShelf{Close,Cancel,Action,Dismiss}` handlers and the two helpers they
+alone used (`resolveOpenTabForDoc`, `revealConversionNotice`).
+
+The activity STORE is unchanged: the `activityShelf` reducer, every producer
+dispatch (OCR, conversion, search-index, update), the `routedShelfAlertsRef`
+toast routing of settled `failed` / `partial-success` operations through
+`terminalAlertFor`, and the `completed` auto-dismiss clock all stay.
+`activityShelfVisible` still selects the operations to report, and a new
+`activityAlert` memo derives `{ count, activeName, activeText, role }` from it.
+
+`DocumentSurfaceColumn` gains an optional `activityAlert` prop and renders
+`ActivityAlertNotice` (`src/renderer/components/ActivityAlertNotice.tsx`) inside
+the canvas notices cluster, after `CanvasAlertNotice`, gated to the ACTIVE tab
+so Multi Mode never duplicates it. The `ActivityShelf.tsx` primitives and their
+`.activity-shelf` CSS remain (the notice consumes `activityRowText` /
+`activityStateRole`); only the App mount is retired. The TFL-1216 control table
+in `CONTROL-INDEX.md` and the earlier sections here are the historical record of
+that surface.
+

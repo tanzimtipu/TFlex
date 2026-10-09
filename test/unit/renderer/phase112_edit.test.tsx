@@ -229,15 +229,10 @@ describe("Phase 112 C3 — the LEFT Edit content navigator", () => {
     }
   });
 
-  it("keeps the designed no-content empty state and its hook", () => {
+  it("collapses the no-content state without a placeholder surface", () => {
     const { host, unmount } = mountContextPanel({ editContent: [ITEMS[2]] });
     try {
-      const empty = host.querySelector<HTMLElement>("[data-edit-content-empty]");
-      expect(empty).not.toBeNull();
-      expect(empty?.classList.contains("empty-state")).toBe(true);
-      expect(empty?.querySelector(".empty-state-headline")?.textContent).toBe(
-        "No editable content on this page.",
-      );
+      expect(host.querySelector("[data-edit-content-empty]")).toBeNull();
       expect(host.querySelectorAll("[data-edit-content-item]").length).toBe(0);
     } finally {
       unmount();

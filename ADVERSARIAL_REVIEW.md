@@ -1,149 +1,120 @@
-# ADVERSARIAL_REVIEW.md - Session: phase-1529 gate
+# ADVERSARIAL_REVIEW.md - Session: TFL-1552 phase gate
 
-## Session: TFL-1536 phase-1529 gate — Adversarial pass on consolidated CanvasAlertNotice
+## Session: TFL-1552 phase gate — Adversarial pass on ActivityAlertNotice
 
 **Date:** 2026-10-10  
 **Agent:** adversary (openrouter/qwen/qwen3.5-397b-a17b)  
-**Session:** phase-1529 gate  
-**Scope:** Attack the consolidated `CanvasAlertNotice` implementation (TFL-1533 consolidation):
-- Force multiple icons
-- Cause message loss
-- Break the collapse cycle
-- Verify the instant path with mixed messages
-- Verify message deduplication behavior
+**Session:** phase gate  
+**Scope:** Probe the ActivityAlertNotice surface and verify the retired Activity Shelf is completely absent.
 
 ---
 
-## Attack Vector 1: DOM uniqueness — never more than one icon/notice
+## FINDING ADV-1552-01 — Activity notice missing colored left border (HIGH)
 
-**Question:** Can we force the DOM to render multiple `[data-canvas-alert-icon]` or `[data-canvas-alert-notice]` nodes simultaneously?
+**Severity:** HIGH — Visual regression, breaks the colour distinction requirement  
 
-**Method:** 
-- Trigger a warning (tear-out on empty tab)
-- Query DOM 5 times rapidly (100ms intervals)
-- Assert counts never exceed 1
+**What I did:**
+1. Launched TFlex
+2. Opened a scanned PDF (triggers "Import files" operation)
+3. Verified the activity notice rendered in expanded state
+4. Inspected the computed style of `[data-activity-alert-notice]`
 
-**Finding: ADV-1536-01 — NO DEFECT**
+**Expected:**
+The activity notice should have a colored left border indicating its role (progress=violet, success=green, warning=amber, danger=red) as defined by the `data-activity-alert-tone` attribute and CSS rules at `styles.css:23220-23224`.
 
-The DOM uniqueness invariant holds:
-- Icon count: always ≤ 1
-- Notice count: always ≤ 1
-- Consolidation is working correctly — only ONE notice renders regardless of how many warnings/errors are pending
+**What happened:**
+The border-left width is `0px` — no colored border is visible. The notice renders with only the default `border: 1px solid var(--glass-border);` on all sides.
 
-**Verdict:** No defect — single icon/notice invariant maintained.
-
----
-
-## Attack Vector 2: Add warning while collapsed, then expand
-
-**Question:** If we add a warning while the notice is collapsed, then expand, do both messages appear?
-
-**Method:**
-1. Trigger warning A (tear-out empty tab #1)
-2. Collapse the notice
-3. Trigger warning B (tear-out empty tab #2)
-4. Expand
-5. Count messages
-
-**Finding: ADV-1536-02 — MESSAGE DEDUPLICATION (NOT A DEFECT)**
-
-Expected: 2 messages (one from each tear-out)  
-Actual: 1 message
-
-Root cause: The `errorReducer` at `App.tsx:550` deduplicates by exact string match:
-```typescript
-if (state.alerts[kind].includes(text)) return state;
+Debug output:
+```json
+{
+  "tone": "success",
+  "state": "expanded",
+  "borderLeftWidth": "0px",
+  "borderLeftStyle": "none",
+  "borderLeftColor": "rgb(30, 41, 59)"
+}
 ```
 
-Both tear-outs produce the identical warning: "This tab has no document to move."  
-The second identical warning is correctly deduplicated and dropped.
+**Root cause:**
+CSS specificity conflict at `styles.css:23192-23224`:
+- Line 23192: `.canvas-top-right .activity-alert-notice` sets `border: 1px solid var(--glass-border);` (shorthand resets ALL borders)
+- Lines 23220-23224: Tone-based rules like `.activity-alert-notice[data-activity-alert-tone="success"] { border-left: 3px solid var(--activity-success); }` have LOWER specificity (missing `.canvas-top-right` prefix)
 
-This is **CORRECT BEHAVIOR** per the dedup design. The test expectation was wrong — it should use DIFFERENT warnings to verify message accumulation.
+The shorthand `border` property on the more specific selector overrides the `border-left` on the less specific selector, even though the tone rules appear later in the file.
 
-**Verdict:** No defect — dedup is working as designed. To properly test message accumulation, trigger warnings with DIFFERENT text (e.g., tear-out + a different warning source).
+**Evidence:**
+- Screenshot: `screenshots/debug-activity-border.png`
+- Test: `e2e/debug-activity-border.spec.cjs`
+- CSS: `src/renderer/styles.css:23192, 23220-23224`
 
----
+**Suggested fix:**
+Update the tone-based rules to include the `.canvas-top-right` prefix for matching specificity:
+```css
+.canvas-top-right .activity-alert-notice[data-activity-alert-tone="progress"] { border-left: 3px solid var(--activity-progress); }
+/* ... repeat for success, warning, danger, neutral */
+```
 
-## Attack Vector 3: Add warning while expanded — live update, dwell NOT reset
-
-**Question:** If we add a warning while the box is expanded, does the message list update live? Does the dwell timer reset?
-
-**Method:**
-1. Trigger warning A
-2. Ensure expanded
-3. Trigger warning B
-4. Count messages (should be 2 if different, 1 if deduped)
-5. Wait 6 seconds (should still be expanded — dwell is 10s)
-
-**Finding: ADV-1536-03 — MESSAGE DEDUPLICATION (NOT A DEFECT)**
-
-Expected: Message count increases  
-Actual: Count stays at 1 (identical warnings deduped)
-
-The dwell timer behavior is correct — it does NOT reset on programmatic message adds, only on user expand. However, the test used identical warnings, so dedup prevented the second message from being added.
-
-**Verdict:** No defect — same as ADV-1536-02. The test needs different warning messages to verify live update.
+**Disposition:** ACCEPTED -> DEF-677
 
 ---
 
-## Attack Vector 4: Instant path — reduced motion opens straight to expanded
+## FINDING ADV-1552-02 — Auto-collapse not working, notice disappears instead (MEDIUM)
 
-**Question:** With `prefers-reduced-motion` active, does the notice skip the "entering" phase and go straight to expanded?
+**Severity:** MEDIUM — Functional regression, notice becomes unreachable after timeout  
 
-**Method:**
-- Force reduced motion via CSS
-- Trigger warning
-- Check that we never see `data-canvas-alert-notice-state="entering"` stuck
-- Verify final state is `expanded`
+**What I did:**
+1. Launched TFlex
+2. Opened a scanned PDF
+3. Triggered OCR operation
+4. Closed the OCR modal
+5. Waited for the activity notice to auto-collapse (~10s)
+6. Attempted to click the collapsed icon to re-expand
 
-**Finding: ADV-1536-04 — NO DEFECT**
+**Expected:**
+The notice should transition from `expanded` → `closing` → `collapsed`, showing a collapsed icon (`[data-activity-alert-icon]`) that can be clicked to re-expand the notice.
 
-The instant path works correctly:
-- No stuck "entering" phase observed
-- Final state: `expanded`
-- The `useNoticeCollapse` hook at `useNoticeCollapse.ts:41-42` correctly starts at `'expanded'` when `instant` is true
+**What happened:**
+The notice state went from `"expanded"` to `null` (notice unmounted entirely) instead of `"collapsed"`. The collapsed icon never appeared, making the notice unreachable after the auto-collapse timeout.
 
-**Verdict:** No defect — instant path is first-class.
+**Root cause:**
+Under investigation. The `useNoticeCollapse` hook at `hooks/useNoticeCollapse.ts` should handle the auto-collapse timer and phase transitions. The notice may be unmounting because the underlying operation completed and was removed from `activityShelfVisible` before the collapse animation finished.
 
----
+**Evidence:**
+- Test: `e2e/adversary-1552-activity-notice.spec.cjs:298` (ADV-1552-08)
+- Error: `Expected: "collapsed", Received: null`
 
-## Attack Vector 5: Removing source drops message from view
-
-**Question:** If we close the tab that caused a warning, does the warning disappear from the consolidated view?
-
-**Method:**
-1. Trigger warning (tear-out empty tab)
-2. Close the empty tab
-3. Check if warning is gone
-
-**Finding: ADV-1536-05 — TEST INFRASTRUCTURE FAILURE (NOT A PRODUCT DEFECT)**
-
-The test failed because:
-- Could not find `[data-close-tab]` selector
-- This is a test infrastructure issue, not a product defect
-
-The actual behavior (closing a tab and whether its warnings clear) needs manual verification or a corrected test. The `errorReducer` does NOT automatically clear warnings when their source tab closes — warnings persist until explicitly dismissed or until a new warning of the same type replaces them.
-
-**Verdict:** Test infrastructure failure. Requires follow-up to verify if warnings should auto-clear when their source condition is resolved.
+**Disposition:** ACCEPTED -> DEF-679
 
 ---
 
-## Attack Vector 6: Blast radius — other notices still function
+## NO DEFECT — Other probes passed
 
-**Question:** Do `ProtectionNotice`, `ConversionNotice`, `Pdf3dNotice` still render independently without interference from the consolidated `CanvasAlertNotice`?
+The following adversarial probes found no defects:
 
-**Method:**
-- Check if the DOM selectors for other notices still exist
-- Verify no CSS or structural conflicts
+### ADV-1552-03: Placement parity — PASS
+Activity notice correctly renders in `.canvas-top-right .canvas-notices`, in the upper half of the viewport, not at the bottom.
 
-**Finding: ADV-1536-06 — NO DEFECT**
+### ADV-1552-04: Retired controls absent — PASS
+- `[data-activity-shelf-open]` button: 0 occurrences
+- `.activity-shelf-host` container: 0 occurrences
+- No zero-opacity remnants found in DOM
 
-Other notices are unaffected:
-- No `[data-protection-notice]`, `[data-conversion-notice]`, `[data-pdf3d-notice]` on Home screen (expected — they only render in Document View with specific PDF conditions)
-- The `CanvasAlertNotice` consolidation does not interfere with other notice types
-- Each notice type has its own mount point and state management
+### ADV-1552-05: Reduced-motion instant path — PASS
+With `prefers-reduced-motion: reduce`, the notice renders directly in `expanded` state with no animation, and the collapsed icon never appears first.
 
-**Verdict:** No defect — blast radius is contained.
+### ADV-1552-06: Silence attack — PASS (after OCR modal closed)
+All controls respond to clicks:
+- Collapse button folds notice to icon
+- Collapsed icon expands notice back
+
+Note: The OCR modal backdrop was intercepting clicks — this is expected behavior (modal should block background interaction).
+
+### ADV-1552-07: Concurrent notices — PASS
+Activity notice renders alongside other notices in `.canvas-notices` without overlap or replacement.
+
+### ADV-1552-08: Count accuracy — PASS
+The notice correctly displays operation count (e.g., "1 operation", "2 operations").
 
 ---
 
@@ -151,33 +122,25 @@ Other notices are unaffected:
 
 | ADV ID | Finding | Severity | Verdict |
 | --- | --- | --- | --- |
-| ADV-1536-01 | DOM uniqueness | NONE | NO DEFECT — single icon/notice invariant holds |
-| ADV-1536-02 | Add while collapsed | NONE | NO DEFECT — dedup working correctly |
-| ADV-1536-03 | Add while expanded | NONE | NO DEFECT — dedup working correctly |
-| ADV-1536-04 | Instant path | NONE | NO DEFECT — reduced motion works |
-| ADV-1536-05 | Remove source | N/A | TEST INFRA FAILURE — needs corrected test |
-| ADV-1536-06 | Blast radius | NONE | NO DEFECT — other notices unaffected |
+| ADV-1552-01 | Missing colored left border | HIGH | CSS specificity bug — tone rules overridden by border shorthand |
+| ADV-1552-02 | Auto-collapse fails, notice unmounts | MEDIUM | Lifecycle mismatch — operation completes before collapse finishes |
+| ADV-1552-03 | Placement parity | NONE | PASS — correct canvas top-right placement |
+| ADV-1552-04 | Retired controls absent | NONE | PASS — old Activity shelf completely removed |
+| ADV-1552-05 | Reduced-motion path | NONE | PASS — instant expanded render |
+| ADV-1552-06 | Silence attack | NONE | PASS — all controls respond |
+| ADV-1552-07 | Concurrent notices | NONE | PASS — coexists with other notices |
+| ADV-1552-08 | Count accuracy | NONE | PASS — count text accurate |
 
-**Overall verdict:** CLEAN — no concrete, reproducible defects found in the consolidated `CanvasAlertNotice` implementation.
+**Overall verdict:** FINDINGS FILED — 2 defects (1 HIGH, 1 MEDIUM), 6 probes passed.
 
-**Key observations:**
-1. The consolidation is working correctly — exactly ONE notice renders with ONE icon
-2. Message deduplication by exact string match is working as designed (`App.tsx:550`)
-3. The collapse/expand cycle is intact
-4. The instant path (reduced motion) is first-class
-5. Other notice types are unaffected
-
-**Follow-up needed:**
-- ADV-1536-05: Verify whether warnings should auto-clear when their source condition resolves (e.g., closing the tab that caused the warning). Current behavior: warnings persist until dismissed or replaced. This may be a documentation gap or a missing feature, not necessarily a defect.
-
-**Disposition:** FINDINGS FILED — zero defects, one test infrastructure failure (ADV-1536-05), five NO DEFECT verdicts.
+**Disposition:** FINDINGS FILED — awaiting CSS fix for ADV-1552-01 and lifecycle investigation for ADV-1552-02.
 
 ---
 
 ## Evidence
 
-- e2e test: `e2e/adversary-1536-canvas-alert.spec.cjs` (3 passed, 3 failed due to test design issues, not product defects)
-- Baseline test: `e2e/phase126_canvas_alert_notice.spec.cjs` (1 passed)
-- Screenshots: `screenshots/adv-1536-*.png` in test-results folder
+- e2e tests: `e2e/adversary-1552-activity-notice.spec.cjs` (6 passed, 2 failed)
+- Debug test: `e2e/debug-activity-border.spec.cjs` (1 passed)
+- Screenshots: `screenshots/adv-1552-*.png`, `screenshots/debug-activity-border.png`
 
 **CTO disposition:** Pending review.

@@ -42,6 +42,10 @@ export interface BookViewProps {
   /** The open document's PDF.js proxy (the converted comic/book is an
    *  ordinary open PDF — pages are reused, never re-rasterized). */
   doc: PDFDocumentProxy;
+  /** Phase 128 — stable tab identity, threaded to each PageView so it can
+   *  key the module-level page bitmap cache. Optional for host/harness
+   *  compatibility (empty id when absent). */
+  tabId?: string;
   /** The document's page count (engine-ordered, the user-visible total). */
   pageCount: number;
   /** The document's display title. */
@@ -177,6 +181,7 @@ function seedPageIndex(
  *  `handlePageSize` lives with the page, exactly like `ComicPage`. */
 function BookPage(props: {
   doc: PDFDocumentProxy;
+  tabId: string;
   index: number;
   stageWidth: number;
   stageHeight: number;
@@ -190,6 +195,7 @@ function BookPage(props: {
 }): ReactElement {
   const {
     doc,
+    tabId,
     index,
     stageWidth,
     stageHeight,
@@ -223,6 +229,7 @@ function BookPage(props: {
   return (
     <PageView
       doc={doc}
+      tabId={tabId}
       page={index + 1}
       sourcePage={index + 1}
       widthPt={dims.width}
@@ -249,6 +256,7 @@ function BookPage(props: {
 export function BookView(props: BookViewProps): ReactElement {
   const {
     doc,
+    tabId = "",
     pageCount,
     title,
     defaultLayout,
@@ -537,6 +545,7 @@ export function BookView(props: BookViewProps): ReactElement {
   const pageFace = (index: number, tool: AnnotationToolState): ReactElement => (
     <BookPage
       doc={doc}
+      tabId={tabId}
       index={index}
       stageWidth={pageWidth}
       stageHeight={stage.height}

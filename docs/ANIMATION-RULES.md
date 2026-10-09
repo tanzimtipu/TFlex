@@ -61,6 +61,13 @@ All UI animations must use the centralized motion system. Do NOT hardcode animat
 - Hover: Lift (translateY -4px, 150ms)
 - Drag: Floating Lift (scale 1.05, 200ms)
 
+**Selection surfaces (PAGES panel summary card / dock selection chip):** (TFL-1589)
+- Appear: Scale Fade In (scale 0.95→1, opacity 0→1, FAST 200ms)
+- Dismiss: Scale Fade Out (reverse to 0.98, opacity→0, MICRO 150ms)
+- Value change: Crossfade (opacity only, FAST in / MICRO out)
+- Verb group swap: `AnimatePresence mode="wait"` (old dissolves, new blooms)
+- Use: `useSelectionPopAnimation()` + `useContentCrossfadeAnimation()`
+
 **Theme Transitions:**
 - Switch: Crossfade (400ms)
 - Uses View Transitions API when available

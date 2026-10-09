@@ -3,6 +3,11 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { useInstantMotion } from '../hooks/useAnimations';
 import { measureHitRects, type HitRect } from '../pdf/highlight';
 import { isInvalidPageRequest } from '../pdf/pdfjs';
+import {
+  getCachedBitmap,
+  pruneTabCache,
+  setCachedBitmap,
+} from '../pdf/pageBitmapCache';
 import { deferWork } from '../state/renderSuspend';
 import type { SearchHit } from '../search/searchIndex';
 import { AnnotationOverlay, type TextItemGeom } from '../annotations/AnnotationOverlay';
@@ -33,6 +38,11 @@ import type {
 
 interface PageViewProps {
   doc: PDFDocumentProxy;
+  /** Phase 128 — stable tab identity. Keys this page's rendered bitmap in
+   *  the module-level page bitmap cache (`pageBitmapCache.ts`) so a
+   *  re-mount of the same `(tabId, sourcePage, cssScale, rotation)` can
+   *  blit instantly instead of re-rasterizing. */
+  tabId: string;
   /** 1-based VISIBLE page index (the engine-ordered position the
    *  user sees). Used for every overlay (annotations / forms /
    *  signatures / stamps / edit), the slot registration, and the
@@ -342,6 +352,7 @@ function releasePdfPage(page: unknown): void {
 export function PageView(props: PageViewProps) {
   const {
     doc,
+    tabId,
     page,
     sourcePage,
     widthPt,
@@ -519,6 +530,36 @@ redactArmed = false,
       onRenderEnd?.();
     };
     const run = async (): Promise<void> => {
+      // Phase 128 — cache fast path. If this exact render identity was
+      // already rasterized for this tab, blit the cached bitmap and skip
+      // the entire getPage -> render -> getTextContent -> TextLayer
+      // pipeline. The cached bitmap already carries the B15 white fill
+      // from the scratch canvas it was captured from, so no extra fill is
+      // needed here.
+      const cached = getCachedBitmap(tabId, sourcePage, cssScale, rotation);
+      if (cached !== null) {
+        const cachedCanvas = canvasRef.current;
+        if (cachedCanvas !== null) {
+          cachedCanvas.width = cached.width;
+          cachedCanvas.height = cached.height;
+          cachedCanvas.style.width = `${cached.width}px`;
+          cachedCanvas.style.height = `${cached.height}px`;
+          const cachedCtx = cachedCanvas.getContext("2d", { alpha: false });
+          if (cachedCtx !== null) {
+            cachedCtx.drawImage(cached, 0, 0);
+          }
+          paintedFrameRef.current = true;
+          paintedRotationRef.current = rotation;
+          const cachedWrapper = wrapperRef.current;
+          if (cachedWrapper !== null) {
+            cachedWrapper.style.setProperty("--scale-factor", String(cssScale));
+          }
+          onRenderStart?.();
+          onRenderEnd?.();
+          setRenderedScale(cssScale);
+          return;
+        }
+      }
       beginRender();
       let pageProxy: PDFPageProxy;
       try {
@@ -797,6 +838,21 @@ redactArmed = false,
           // The visible canvas now holds a real painted frame.
           paintedFrameRef.current = true;
           paintedRotationRef.current = rotation;
+          // Phase 128 — capture this freshly-rendered frame into the
+          // session bitmap cache so a later re-mount / tab switch at the
+          // same render identity can blit it instantly. Fire-and-forget:
+          // the visible frame is already painted, so cache capture must
+          // never delay the render completion (or the onRenderEnd gate).
+          // Guarded because `createImageBitmap` is absent in some
+          // environments (e.g. jsdom unit runs).
+          if (typeof createImageBitmap === "function") {
+            void createImageBitmap(scratch)
+              .then((bitmap) => {
+                setCachedBitmap(tabId, sourcePage, cssScale, rotation, bitmap);
+                pruneTabCache(tabId);
+              })
+              .catch(() => undefined);
+          }
         }
       }
       if (turning) {
@@ -861,7 +917,7 @@ redactArmed = false,
       releasePdfPage(pdfPage);
       pdfPage = null;
     };
-  }, [shouldRender, cssScale, doc, sourcePage, onPageSize, onRenderStart, onRenderEnd, rotation]);
+  }, [shouldRender, cssScale, doc, sourcePage, tabId, onPageSize, onRenderStart, onRenderEnd, rotation]);
 
   useLayoutEffect(() => {
     if (!ready || hits.length === 0) {

@@ -29,7 +29,7 @@ interface Harness {
   cleanup: () => void;
 }
 
-function renderHeader(findEnabled: boolean): Harness {
+function renderHeader(findEnabled: boolean, findOpen = false): Harness {
   const container = document.createElement("div");
   document.body.appendChild(container);
   const root = createRoot(container);
@@ -48,6 +48,7 @@ function renderHeader(findEnabled: boolean): Harness {
         onOpenToolSearch={onOpenToolSearch}
         onOpenFind={onOpenFind}
         findEnabled={findEnabled}
+        findOpen={findOpen}
       />,
     );
   });
@@ -149,6 +150,31 @@ describe("Phase 40 item 5 — the header's two search affordances", () => {
       expect(h.onOpenFind).not.toHaveBeenCalled();
       // The Ctrl+K palette works on the welcome screen: always enabled.
       expect(button(h.container, "[data-header-tool-search]").hasAttribute("disabled")).toBe(false);
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  // TFL-1569 — the Ctrl+F icon carries the pressed toggle state of the FOCUSED
+  // pane's live Find bar: `btn-toggle` + aria-pressed="true" while it is open,
+  // and neither of those when it is closed.
+  it("marks the Ctrl+F icon as a pressed toggle while findOpen is true", () => {
+    const h = renderHeader(true, true);
+    try {
+      const f = button(h.container, "[data-header-find]");
+      expect(f.classList.contains("btn-toggle")).toBe(true);
+      expect(f.getAttribute("aria-pressed")).toBe("true");
+    } finally {
+      h.cleanup();
+    }
+  });
+
+  it("omits the toggle state on the Ctrl+F icon while findOpen is false", () => {
+    const h = renderHeader(true, false);
+    try {
+      const f = button(h.container, "[data-header-find]");
+      expect(f.classList.contains("btn-toggle")).toBe(false);
+      expect(f.getAttribute("aria-pressed")).toBe("false");
     } finally {
       h.cleanup();
     }

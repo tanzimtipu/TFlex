@@ -142,9 +142,6 @@ const SHARED_ALLOW: Readonly<Record<string, string>> = {
   MessageCirclePlus: "add-comment annotation metaphor (registry annCallout entry + the shared Quiet Precision registry holds its retained glyph)",
   Check: "the check/confirm mark (registry toggle + annotation tool menu selection)",
   Ellipsis: "the more-actions overflow (registry pageContextMenu/dockOverflow retained glyph + toolsRegistry)",
-  // Phase 117 (chunk D) — the content-action-bar More control (selectableContent)
-  // reuses the dock overflow glyph for the same "more actions" disclosure.
-  dockOverflow: "the more-actions overflow disclosure (the ActionDock overflow control + the shared content-action-bar More control); one overflow metaphor, two chrome surfaces",
   File: "the generic document/file item glyph (Multi Mode untitled pane + welcome-recents file row); both denote an open PDF document",
   ClipboardPaste: "the create-PDF-from-clipboard verb (registry createFromClipboard + toolsRegistry holds its retained glyph)",
   GripVertical: "the drag-handle affordance (page drag + the Multi Mode divider)",

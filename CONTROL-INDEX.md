@@ -728,10 +728,12 @@ Appended 2026-10-07, updated 2026-10-09 (TFL-1465). The PAGES navigator's
 thumbnails are page CARDS: the over-preview hover verbs (`[data-thumb-verbs]`,
 `[data-thumb-verb]`) are retired. Each card HUGS its preview (`width: fit-content`
 via `.thumb-card`; the border/inset gap is the same 7px on all four sides) and
-its controls live in an overlay bar (`.thumb-overlay` / `[data-thumb-overlay]`)
-pinned to the bottom edge of the page preview itself: a real
-`[data-thumb-checkbox]` + `.thumb-label` on the left and a 32px
-`[data-thumb-more]` button (44px under coarse pointers) on the right. The
+its controls live in a transparent, horizontally centered overlay row
+(`.thumb-overlay` / `[data-thumb-overlay]`, TFL-1585 removed the opaque glass
+bar) pinned to the bottom edge of the page preview itself: a real
+`[data-thumb-checkbox]` + `.thumb-label` and a 32px
+`[data-thumb-more]` button (44px under coarse pointers), centered over the
+preview. The
 current page keeps a violet 2px leading marker (`[data-thumb-current-marker]`)
 plus a current-page eye icon (`[data-thumb-viewing]`), distinct from the
 selected set (checkbox checked + `.thumb-selected` tint).
@@ -1045,7 +1047,7 @@ strips) is retuned to the operator's three corrections:
 | Control | Selector | Promised action | Unit test |
 |---|---|---|---|
 | Hugged card | `.thumb-card` (on the `.thumb` root in card mode) | `width: fit-content` + centered, so the border/inset gap is the same 7px on all four sides (matches today's top gap: 6px padding + 1px border) | `test/unit/renderer/phase111_pages.test.tsx` |
-| Preview-bottom overlay | `.thumb-overlay` / `[data-thumb-overlay]` | Absolute bar pinned to the preview's bottom edge (6px from the card padding box); a SIBLING of `.thumb-page` so the preview button stays the card's one navigation control | `test/unit/renderer/phase111_pages.test.tsx` |
+| Preview-bottom overlay | `.thumb-overlay` / `[data-thumb-overlay]` | Transparent, horizontally CENTERED control row on the preview's bottom edge (6px from the card padding box); a SIBLING of `.thumb-page` so the preview button stays the card's one navigation control. TFL-1585 removed the opaque glass bar. | `test/unit/renderer/phase111_pages.test.tsx` + `phase111_thumbRotationBorder.test.tsx` |
 | Current-page indicator | `[data-thumb-viewing]` (`aria-label="Currently viewing"`) | Eye icon (`Eye`, lucide) in the overlay row — replaces the retired "Viewing" text | `test/unit/renderer/phase111_pages.test.tsx` |
 
 Slot geometry: card mode now adds 0px below the preview
@@ -1054,6 +1056,22 @@ Slot geometry: card mode now adds 0px below the preview
 label-only rail/pane thumbs keep the 18px label line and their full-width box
 unchanged. qa-owned e2e `e2e/tfl1076_def612_def613_evidence.spec.cjs:192` still
 asserts the old "Viewing" text and must migrate to the eye-icon assertion.
+
+## TFL-1585 - Rotated preview border + transparent centered controls addendum
+
+Appended 2026-10-10. The PAGES navigator page-preview card (card mode) gains two
+visual corrections:
+
+| Aspect | Selector | Promised behaviour | Unit test |
+|---|---|---|---|
+| Rotating border | `.thumb-canvas-wrap` (border owner) inside the new `.thumb-frame` | The rotation (`thumb-rot-{90,180,270}`) turns the SAME element that owns the 1px `--border-subtle` border, so the page stays inside its border. In card mode `.thumb-frame` sizes its layout box to the ROTATED footprint (width/height swap at 90/270), so the fit-content card hugs the rotated page and nothing spills outside the frame | `test/unit/renderer/phase111_thumbRotationBorder.test.tsx` |
+| Transparent centered controls | `.thumb-overlay` / `[data-thumb-overlay]` | `background: transparent`, `backdrop-filter: none`, `border: none`; centered with `left: 50%` + `translateX(-50%)` + `justify-content: center`; label `var(--fg-strong)` + theme-aware `text-shadow` | `test/unit/renderer/phase111_thumbRotationBorder.test.tsx` |
+
+The label-only (non-card) rail/pane thumb DOM is unchanged: it renders
+`.thumb-canvas-wrap` directly inside `.thumb-page` (no `.thumb-frame`).
+QA-owned follow-up: the brief requested an e2e spec
+`e2e/tfl1566_preview_border_rotation.spec.cjs`; `e2e/` is qa-owned (only qa
+writes there), so qa must author it.
 
 ## TFL-1533 - Consolidate the in-canvas alert into one tone-grouped notice
 
@@ -1078,6 +1096,147 @@ The Phase 126 REQUIREMENTS.md chunk and the generated
 `docs/phase-specs/phase-126.md` still describe the superseded two-box
 `{tone, messages}` design; they are the CTO's phase record and were left
 untouched by this frontend change.
+
+## TFL-1549 - Retire the bottom Activity Shelf; surface activity in-canvas
+
+Appended 2026-10-10. `src/renderer/App.tsx` no longer mounts the window-level
+Activity Shelf surface: the `.activity-shelf-host`, `ActivityShelfPanel` and
+`ActivityShelfSummary` render block is removed, along with its `activityShelfOpen`
+/ `activityShelfFrozen` state, the `activityShelfTriggerRef`, the
+`onActivityShelf{Close,Cancel,Action,Dismiss}` callbacks and the helpers that
+served them (`resolveOpenTabForDoc`, `revealConversionNotice`). The activity
+STORE is unchanged: the `activityShelf` reducer, every producer dispatch, the
+`routedShelfAlertsRef` toast routing (`terminalAlertFor`) and the `completed`
+auto-dismiss clock all stay. `activityShelfVisible` still selects the operations
+to report, and a new `activityAlert` memo derives `{ count, activeName,
+activeText, role }` from it.
+
+`DocumentSurfaceColumn` gains an optional `activityAlert` prop and renders
+`ActivityAlertNotice` (`src/renderer/components/ActivityAlertNotice.tsx`) inside
+the canvas notices cluster, after `CanvasAlertNotice`; it mounts only in the
+ACTIVE tab's canvas (the same gate as `alert`) so Multi Mode never duplicates it.
+`ActivityShelf.tsx` and its `.activity-shelf` CSS remain (the notice consumes the
+`activityRowText` / `activityStateRole` helpers); only the App mount is retired.
+
+| Control | Selector | Promised action | Unit test |
+|---|---|---|---|
+| Activity summary notice | `[data-activity-alert-notice]` (`data-activity-alert-tone`, `data-activity-alert-state`) | In-canvas operation summary: count + active name/status, tone from the state role | qa-owned e2e (TFL-1550) |
+| Collapse to icon | `[data-activity-alert-collapse]` | Collapses the notice to the activity "i" (`[data-activity-alert-icon]`) | qa-owned e2e (TFL-1550) |
+| Expand from icon | `[data-activity-alert-icon]` | Re-expands the notice and resets the reading dwell | qa-owned e2e (TFL-1550) |
+
+The TFL-1216 control table above and `docs/ACTIVITY-SHELF-INVENTORY.md` describe
+the retired App mount and remain the historical record; REQUIREMENTS.md still
+names the Activity Shelf primitives and is outside this frontend change's edit
+set.
+
+## TFL-1580 - View Strip footer icon/label contrast across all themes
+
+Appended 2026-10-10. CSS-only fix, scoped to the `.view-strip` block in
+`src/renderer/styles.css` (no React/TS change). Before this the page-nav and zoom
+action controls (`.btn-toolbar`) inherited the app `--fg` while the toggle /
+disclosure / segmented / secondary controls carried `--fg-strong`, so the same
+resting footer glyph rendered at two weights and the hover / selected / disabled
+states were never declared for the action glyphs. One explicit ladder now covers
+EVERY interactive glyph in the footer on the shared token set, so a theme switch
+recolours them together: default `--fg-muted`, hover `--fg-strong`, selected
+`[aria-pressed="true"]` / `[aria-expanded="true"]` `--btn-selected-fg` (on the
+shared `--accent-soft` fill). The brief named `--fg-faint` for disabled, but that
+token measures only 2.48:1 (light) / 2.94:1 (dark) on the footer bar - below the
+brief's own "disabled >= 3:1" constraint and explicitly reserved by
+`docs/DESIGN-SYSTEM.md` for non-interactive metadata. The existing, theme-aware
+non-text disabled ink `--tf-icon-disabled` is used instead and clears the floor
+in every theme (4.23 / 6.49 / 4.17), held at full opacity because the family's
+0.55 fade would drop the composite to ~2.0:1. The text readouts ride the same
+muted tier (`.view-strip .zoom-percent` and `.view-strip .page-input` default
+`--fg-muted`, the field going `--fg-strong` on focus); `.view-strip .page-total`
+keeps its existing `--tf-text-supporting` (pinned by phase110). No geometry,
+target size, gap or breakpoint changed.
+
+| Control | Selector | State ink | Evidence |
+|---|---|---|---|
+| Footer action/toggle/layout glyphs | `.view-strip .btn` | default `--fg-muted` / hover `--fg-strong` / selected `--btn-selected-fg` | `test/unit/renderer/phase109_viewStrip.test.ts`, `phase113_dockToolbars.test.tsx` |
+| Footer disabled glyphs | `.view-strip .btn[disabled]`, `[aria-disabled="true"]` | `--tf-icon-disabled`, opacity 1 | `test/unit/renderer/phase110_typographyChrome.test.ts`, `tfl1116_idleLegibility.test.ts` |
+| Zoom + jump readouts | `.view-strip .zoom-percent`, `.view-strip .page-input` (`:focus`) | `--fg-muted` (`--fg-strong` focus) | `test/unit/renderer/phase110_typographyChrome.test.ts` |
+
+Composited non-text contrast (WCAG 2.1) on the footer bar, sampled from the real
+theme tokens: default 6.16 / 5.22 / 13.43, hover 15.92 / 13.56 / 15.18, selected
+4.47 / 7.80 / 4.41, disabled 4.23 / 6.49 / 4.17 (light / dark / frosted) - every
+shipped state clears 3:1. Screenshots:
+`screenshots/TFL-1580-footer-{light,dark,frosted}.png` and `-hover.png`. The
+scoped `.view-strip .btn` colour override is the documented exception the brief
+authorised; `REQUIREMENTS.md`'s "no surface may override a canonical variant's
+colour" line is outside this change's edit set and was left untouched.
+
+## TFL-1589 - Page-selection transition animations (Selection card + dock chip)
+
+Appended 2026-10-10. Renderer-only motion. The PAGES panel's Selection summary
+card and the Action Dock's selection chip now appear / dismiss through an
+`AnimatePresence` + `motion` boundary instead of snapping, and their value text
+("N selected" / range / "N pages") crossfades when the selection size changes.
+The dock's primary verb group dissolves out before the next one blooms in
+(`AnimatePresence mode="wait"`). Two new hooks in `useAnimations.ts` own the
+timing from the shared tokens: `useSelectionPopAnimation()` (scale
+`--motion-scale-enter` 0.95 -> 1 + opacity, FAST 200ms enter / MICRO 150ms exit)
+and `useContentCrossfadeAnimation()` (opacity-only, FAST in / MICRO out). Both
+collapse to the shared reduced-motion / Animations-OFF instant path. No layout
+changed: the card wrapper carries `flex: 0 0 auto` and the crossfading value text
+is `inline-block`, so neither the panel scroll position nor the dock's measured
+width shifts. The `data-context-panel-selection-*` and `data-dock-chip` hooks and
+the `context-panel-selection` / `action-dock-chip` classes are unchanged. The
+motion-managed primary group neutralises the legacy `.action-dock-group` CSS
+keyframe inline (`animation: none`); the Phase-59 `.anim-verb-out` ghost is a
+child animation and is untouched. `REQUIREMENTS.md` was outside this edit set.
+
+| Motion | Selector | Behaviour | Evidence |
+|---|---|---|---|
+| Selection card appear/dismiss | `[data-context-panel-selection-motion]` (wraps `[data-context-panel-selection]`) | scale-fade in (FAST) / out (MICRO) | `test/unit/renderer/tfl1568_selectionAnimation.test.tsx` |
+| Count / range value crossfade | `[data-context-panel-selection-count-value]`, `[data-context-panel-selection-range-value]` | keyed opacity crossfade FAST/MICRO | `test/unit/renderer/tfl1568_selectionAnimation.test.tsx` |
+| Dock selection chip | `[data-dock-chip]` (count: `[data-dock-chip-count]`) | scale-fade in/out + keyed count crossfade | `test/unit/renderer/tfl1568_dockChipAnimation.test.tsx` |
+| Dock primary verb group | `[data-dock-group="primary"]` | `mode="wait"` swap (old dissolves, new blooms) | `test/unit/renderer/tfl1568_dockChipAnimation.test.tsx` |
+
+## TFL-1604 - Activity notice tone tokens + collapse lifecycle (DEF-677, ADV-1552-02)
+
+Appended 2026-10-10. Two fixes against the TFL-1531/TFL-1549 `ActivityAlertNotice`
+(no component change; one CSS block plus a lifecycle guard in `App.tsx`).
+
+DEF-677 (tone channel was dead): the five `--activity-*` role tokens were declared
+ONLY on `.activity-shelf`, but the notice renders in `.canvas-top-right` (the shelf
+host was retired in TFL-1549), so the roles never resolved there; and the
+`.canvas-top-right .activity-alert-notice` base rule uses the `border` shorthand
+(`1px solid var(--glass-border)`), which reset the tone `border-left` because the
+un-prefixed tone rules had lower specificity. The five tokens moved verbatim to
+`:root` (the shelf still consumes the same mappings; `--activity-radius` /
+`--activity-transition` stay shelf-local), and the five `border-left` + five
+`.activity-alert-notice-mark` background rules are now prefixed with
+`.canvas-top-right` so the 3 px left border wins over the shorthand. The result:
+the 6 px dot and 3 px left border carry the violet `--accent` for `progress`
+(distinct from `--warning` amber and `--error` red) and the matching success /
+warning / danger / neutral tones.
+
+ADV-1552-02 (premature unmount): `activityAlert` became `undefined` the instant the
+operation left `activityShelfVisible`, so the host either skipped
+`DocumentSurfaceColumn` entirely or stopped rendering the notice before
+`useNoticeCollapse` reached `collapsed`. A new `useLingeringValue` helper in
+`App.tsx` holds the last non-null alert for 2 s; `tabActivityAlert` and the mount
+guard now read the lingered value, so the notice stays mounted through
+`closing -> collapsed`, the collapsed icon (`[data-activity-alert-icon]`) appears
+and is clickable, and a new operation replaces the linger immediately (the pending
+timeout is cancelled). `useNoticeCollapse` / `ActivityAlertNotice.tsx` /
+`DocumentSurfaceColumn` are unchanged.
+
+| Fix | Selector / scope | Behaviour | Evidence |
+|---|---|---|---|
+| DEF-677 token scope | `:root` `--activity-{progress,success,warning,danger,neutral}` | roles resolve in `.canvas-top-right` (was `.activity-shelf`-only) | `e2e/tfl1550_activity_alert_notice.spec.cjs` (tone criterion) |
+| DEF-677 specificity | `.canvas-top-right .activity-alert-notice[data-activity-alert-tone]` | 3 px tone left border wins over the base `border` shorthand | `e2e/tfl1550_activity_alert_notice.spec.cjs` |
+| DEF-677 status dot | `.canvas-top-right .activity-alert-notice-mark[data-activity-alert-role]` | 6 px dot carries the role accent | `e2e/tfl1550_activity_alert_notice.spec.cjs` |
+| ADV-1552-02 lifecycle | `App.tsx` `useLingeringValue` + `lingeringActivityAlert` | notice stays mounted through collapse; icon is clickable | `e2e/tfl1550_activity_alert_notice.spec.cjs` |
+
+Verification: `npm run typecheck` exit 0; `npm run test:unit --
+test/unit/renderer/activityShelf.test.tsx` 21/21 passed; `npm run build:renderer`
+exit 0; `npm run test:e2e -- e2e/tfl1550_activity_alert_notice.spec.cjs` 2/2 passed.
+Screenshots: `screenshots/tfl1550-activity-notice-expanded.png`,
+`-collapsed.png`, `-reduced-motion.png`. `REQUIREMENTS.md` and the TFL-1531/TFL-1216
+records above remain the historical record and were not edited.
 
 
 

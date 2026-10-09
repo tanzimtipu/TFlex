@@ -353,12 +353,23 @@ export function formatReplaceReport(
 
 interface DocumentViewProps extends DocumentViewDockProps {
   doc: PDFDocumentProxy;
+  /** Phase 128 — stable tab identity, threaded to every PageView so it can
+   *  key the module-level page bitmap cache. Optional for host/harness
+   *  compatibility: defaults to an empty id (cache is then tab-agnostic
+   *  within the view, which is harmless for the single-doc tests). */
+  tabId?: string;
   pageCount: number;
   outline: OutlineNode[] | null;
   initial: PersistedViewer;
   onPersist: (v: PersistedViewer) => void;
   onDiagnostics: (d: DocDiagnostics) => void;
   onSearchIndexProgress?: (p: SearchIndexProgress | null) => void;
+  /** TFL-1569 — publish this pane's live `searchOpen` so the host can mirror
+   *  the FOCUSED pane's Find state into the title-bar icon. Fired on every
+   *  change and again when the pane gains focus, so a Multi Mode swap updates
+   *  the icon without waiting for a toggle. Optional for harness compatibility:
+   *  absent means the pane simply does not report. */
+  onSearchOpenChange?: (open: boolean) => void;
   /** Def-050 â€” register an imperative invalidator the host can call
    *  when the underlying doc's text content has changed (e.g. after
    *  OCR writes an invisible Tr=3 text layer to the engine's copy of
@@ -1014,12 +1025,14 @@ export interface DocumentViewDockProps {
  */
 export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(function DocumentView({
   doc,
+  tabId = "",
   pageCount,
   outline,
   initial,
   onPersist,
   onDiagnostics,
   onSearchIndexProgress,
+  onSearchOpenChange,
   registerSearchIndexInvalidator,
   registerViewCommands,
   registerDockAvailability,
@@ -4190,6 +4203,19 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
     });
   }, [zoom, currentPage, searchOpen, query, activeHitIndex, onPersist]);
 
+  // TFL-1569 — mirror this pane's live Find state up so the title-bar icon can
+  // reflect the FOCUSED pane's bar. Keyed on `searchOpen` (a toggle) and
+  // `paneFocused` (a Multi Mode focus switch re-publishes the now-focused
+  // pane's value without waiting for a toggle; the host drops a background
+  // pane's publish).
+  useEffect(() => {
+    onSearchOpenChange?.(searchOpen);
+    // The callback identity is intentionally omitted: it always pushes the
+    // same `searchOpen` value, so a re-run on identity change would be a no-op
+    // stutter. Re-publishing on `searchOpen` / `paneFocused` is what matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchOpen, paneFocused]);
+
   useEffect(() => {
     onDiagnostics({
       pageCount,
@@ -4619,7 +4645,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
       zoomOut: (): void => zoomTo(-1),
       fitWidth: (): void => setMode('fit-width'),
       fitPage: (): void => setMode('fit-page'),
-      find: (): void => setSearchOpen(true),
+      find: (): void => setSearchOpen((v) => !v),
       // Page stepping composes the view's own `jumpToPage` (the same call the
       // rail thumbnails and the search hits use); the clamp keeps the ends.
       prevPage: (): void => jumpToPage(Math.max(1, currentPage - 1)),
@@ -5088,6 +5114,7 @@ export const DocumentView = forwardRef<DocumentViewHandle, DocumentViewProps>(fu
                   {isMounted && (
                     <PageView
                       doc={doc}
+                      tabId={tabId}
                       // DEF-133 â€” thread BOTH page spaces into
                       // PageView. `page` is the VISIBLE index every
                       // overlay uses when it creates content

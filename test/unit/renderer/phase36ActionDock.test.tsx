@@ -235,7 +235,7 @@ describe("Phase 36 — ActionDock State 2: selection override", () => {
     }
   });
 
-  it("Clear empties the selection and returns to State 1", () => {
+  it("Clear empties the selection and returns to State 1", async () => {
     const onClearPageSelection = vi.fn();
     const { host, rerender, unmount } = renderDock({
       activeStage: "pages",
@@ -247,6 +247,12 @@ describe("Phase 36 — ActionDock State 2: selection override", () => {
       expect(onClearPageSelection).toHaveBeenCalledTimes(1);
       rerender({ pageSelection: [] });
       expect(host.querySelector("[data-dock-state]")?.getAttribute("data-dock-state")).toBe("stage");
+      // TFL-1589 — the chip now dismisses through AnimatePresence: it stays
+      // mounted for its exit frame, then unmounts (never a synchronous cut).
+      expect(host.querySelector("[data-dock-chip]")).not.toBeNull();
+      await act(async (): Promise<void> => {
+        await new Promise((resolve) => setTimeout(resolve, 40));
+      });
       expect(host.querySelector("[data-dock-chip]")).toBeNull();
     } finally {
       unmount();

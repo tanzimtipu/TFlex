@@ -188,14 +188,6 @@ function clickEl(el: Element): void {
   });
 }
 
-/** Phase 117 chunk B — Edit/Delete now live behind the separated More
- *  control, so a selection must open it before the verbs exist in the DOM. */
-function openMore(host: HTMLElement): void {
-  const more = host.querySelector<HTMLButtonElement>("[data-content-action$='-more']");
-  if (more === null) throw new Error("content-action more control not found");
-  clickEl(more);
-}
-
 function doubleClickEl(el: Element, x: number, y: number): void {
   act((): void => {
     el.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: x, clientY: y }));
@@ -271,7 +263,6 @@ describe("DEF-153/154 — committed annotation selection model (rect)", () => {
       const shape = host.querySelector<Element>(".ann-shape[data-annotation-id='rect-1']");
       if (shape === null) throw new Error("shape not found");
       clickEl(shape);
-      openMore(host);
       const del = host.querySelector<HTMLButtonElement>("[data-content-action$='-delete']");
       expect(del).not.toBeNull();
       if (del === null) return;

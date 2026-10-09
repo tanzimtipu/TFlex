@@ -211,14 +211,6 @@ function runBarButton(h: RunHarness, action: string): HTMLElement {
   return btn;
 }
 
-/** Phase 117 chunk B — the run bar's Delete lives behind the separated
- *  More control; open it before the verb exists in the DOM. */
-function openRunMore(h: RunHarness): void {
-  const more = h.host.querySelector<HTMLElement>('[data-content-action="textrun-more"]');
-  if (more === null) throw new Error("run more control not found");
-  click(more);
-}
-
 /** Select the sole run, then feed it live session text as the panel does. */
 function selectRunAndType(h: RunHarness, text: string): void {
   pointer(layerOf(h.host), "pointerdown", 150, 110);
@@ -308,7 +300,6 @@ describe("TFL-695 run-session commit boundaries (real EditOverlay)", () => {
     const h = mountRunHost();
     try {
       selectRunAndType(h, "whatever");
-      openRunMore(h);
       click(runBarButton(h, "delete"));
       expect(h.onCommitTextEdit, "Delete masks via an empty-text run commit").toHaveBeenCalledTimes(1);
       expect(h.onCommitTextEdit.mock.calls[0]?.[0].newText).toBe("");

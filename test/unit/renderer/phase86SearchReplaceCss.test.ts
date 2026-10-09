@@ -219,3 +219,62 @@ describe("styles.css - content-fitting replace buttons (DEF-500)", () => {
     expect(src).toContain("Replace all");
   });
 });
+
+// TFL-1569 (B) - the Find input (row 1) and Replace input (row 2) used to size
+// themselves with `flex: 1 1 auto`, so each stretched to fill whatever its own,
+// different, right-hand control cluster left behind: the two boxes ended at
+// different right edges. jsdom lays nothing out, so this pins the fix
+// textually: ONE shared width token on .search-bar, consumed by .search-input
+// with no grower, and the replace row promoted from an inline style into CSS.
+describe("styles.css - TFL-1569 coherent Find / Replace input sizing", () => {
+  const raw = stripCssComments(readStyles());
+  const SEARCHBAR_SRC = resolve(
+    __dirname,
+    "../../../src/renderer/components/SearchBar.tsx",
+  );
+
+  it(".search-bar declares the one shared input-width token", () => {
+    const bar = collectRules(raw).find((r) => r.selector === ".search-bar");
+    expect(bar).toBeDefined();
+    expect(declarationValue(bar?.body ?? "", "--search-input-w")).not.toBeNull();
+  });
+
+  it(".search-input sizes from the shared token and never grows", () => {
+    const input = collectRules(raw).find((r) => r.selector === ".search-input");
+    expect(input).toBeDefined();
+    const body = input?.body ?? "";
+    expect(declarationValue(body, "flex")).toBe("0 0 auto");
+    expect(declarationValue(body, "width")).toContain("var(--search-input-w");
+    expect(declarationValue(body, "height")).toBe("28px");
+  });
+
+  it("no .search-input rule forks the height or the shared width", () => {
+    const variants = collectRules(raw).filter(
+      (r) => r.selector.startsWith(".search-input"),
+    );
+    expect(variants.length).toBeGreaterThan(0);
+    for (const rule of variants) {
+      const width = declarationValue(rule.body, "width");
+      if (width !== null) expect(width).toContain("var(--search-input-w");
+      const height = declarationValue(rule.body, "height");
+      if (height !== null) expect(height).toBe("28px");
+    }
+  });
+
+  it(".search-replace-row is styled in CSS and spans the bar width", () => {
+    const row = collectRules(raw).find((r) => r.selector === ".search-replace-row");
+    expect(row).toBeDefined();
+    const body = row?.body ?? "";
+    expect(declarationValue(body, "flex-basis")).toBe("100%");
+    expect(declarationValue(body, "display")).toBe("flex");
+  });
+
+  it("SearchBar.tsx drops the inline replace-row fork", () => {
+    const src = readFileSync(SEARCHBAR_SRC, "utf8");
+    // The replace row is now inert markup: a bare class, sized entirely by
+    // CSS. A `style` attribute on it would fork the shared layout again.
+    expect(src).toContain('<div className="search-replace-row">');
+    expect(src).not.toContain('className="search-replace-row"\n          style=');
+    expect(src).not.toContain('className="search-replace-row" style=');
+  });
+});

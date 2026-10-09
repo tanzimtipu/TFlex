@@ -173,6 +173,7 @@ function pageProps(
 ): Parameters<typeof PageView>[0] {
   return {
     doc: makeDocStub(6),
+    tabId: "tab-def254",
     page,
     sourcePage: page,
     widthPt: 612,

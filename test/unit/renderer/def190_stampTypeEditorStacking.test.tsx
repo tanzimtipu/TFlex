@@ -123,14 +123,6 @@ function clickEl(el: Element): void {
   });
 }
 
-/** Phase 117 chunk B — Edit/Delete now live behind the separated More
- *  control, so a selection must open it before the verbs exist in the DOM. */
-function openStampMore(host: HTMLElement): void {
-  const more = host.querySelector<HTMLButtonElement>("[data-content-action='stamp-more']");
-  if (more === null) throw new Error("stamp more control not found");
-  clickEl(more);
-}
-
 function pressEscape(): void {
   act((): void => {
     window.dispatchEvent(
@@ -145,7 +137,6 @@ function openStampTypeEditor(host: HTMLElement): HTMLElement {
   const node = host.querySelector<HTMLElement>(".stamp-annotation");
   if (node === null) throw new Error("stamp annotation not rendered");
   clickEl(node);
-  openStampMore(host);
   const edit = host.querySelector<HTMLButtonElement>(
     "[data-content-action='stamp-edit']",
   );
@@ -224,7 +215,6 @@ describe("DEF-190 — stamp-type editor paints above sibling pages and closes vi
       if (node === null) throw new Error("stamp annotation not rendered");
       clickEl(node);
       expect(onSelectionChange).toHaveBeenLastCalledWith(true);
-      openStampMore(host);
       const del = host.querySelector<HTMLButtonElement>(
         "[data-content-action='stamp-delete']",
       );

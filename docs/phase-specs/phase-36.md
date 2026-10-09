@@ -23,8 +23,7 @@ and re-homed, never rewritten.
 - **Command palette**: `Ctrl+K` opens it (fuzzy search across every tool, recent file and view action) and
   it supersedes the All-tools panel as the browse-everything surface. `Ctrl+Shift+P` stays a legacy alias.
   **Pin a result to the dock with `Ctrl+Enter`.** `Ctrl+P` remains PRINT and must not be re-bound.
-- **Stages**: `Ctrl+1..4` switch PAGES/EDIT/REVIEW/DELIVER. Stage state is per pane (Multi Mode tracks a
-  stage per pane). The Stage Rail is 44px, full height, four icon+label buttons with the settings gear at
+- **Stages**: `Ctrl+1..4` switch PAGES/EDIT/REVIEW/DELIVER. Stage state is per tab in single mode and per pane in multi mode. The Stage Rail is 44px, full height, four icon+label buttons with the settings gear at
   its bottom, and collapses to icon-only below a 1100px window width.
 - **One moving part**: switching stage swaps ONLY the left context panel, the dock contents and the
   inspector contents. The title bar, Stage Rail, canvas and floating pills never move.

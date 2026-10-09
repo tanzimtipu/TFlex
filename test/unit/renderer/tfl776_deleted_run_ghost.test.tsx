@@ -151,8 +151,7 @@ describe("TFL-776.1 — a deleted run leaves no hover box / hit-target", () => {
     const h = mount();
     try {
       selectRun(h.host, 150, 110);
-      // Phase 117 chunk B — Delete now lives behind the separated More control.
-      clickAction(h.host, '[data-content-action="textrun-more"]');
+      // TFL-1573 — Delete is inline (no More control).
       clickAction(h.host, '[data-content-action="textrun-delete"]');
 
       const commits = h.state.committedTextRuns ?? [];

@@ -12,7 +12,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose, gotoStage, ensurePanelExpanded, runTool } = require('./lib/helpers.cjs');
+const { hardClose, gotoStage, ensurePanelExpanded, runTool, openSamplePath } = require('./lib/helpers.cjs');
 
 // The harness exports ELECTRON_RUN_AS_NODE=1; launchApp spreads process.env, so
 // Electron would exit as Node ("Process failed to launch!"). Clear it.
@@ -36,12 +36,11 @@ async function setTheme(win, theme) {
 }
 
 async function openReport(win, app) {
-  const p = getSamplePath('report.pdf');
-  await app.evaluate(async ({ dialog }, f) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [f] });
-  }, p);
-  await win.locator('[data-home-tool="open"]').first().click();
-  await win.waitForSelector('.workspace', { timeout: 30000 });
+  // Phase 118 — generic Open now stages picked files in the Intake Tray; a
+  // path alone no longer opens the document. Use the shared helper, which
+  // drives the real Open control, waits for Intake classification, clicks the
+  // explicit Intake Open, and waits for the rendered canvas.
+  await openSamplePath(win, app, getSamplePath('report.pdf'));
   await win.waitForSelector('.pdf-page canvas', { timeout: 30000 });
   await win.waitForTimeout(800);
 }
@@ -281,18 +280,38 @@ for (const theme of THEMES) {
         }
       });
 
-      // ---- ContextPanel: edit-content designed empty state -------------------
-      await guard('context-panel-edit-empty', async () => {
+      // ---- ContextPanel: Edit panel collapses the no-content placeholder -----
+      // TFL-1586 — the "No editable content on this page." placeholder is
+      // REMOVED. The Edit panel's CONTENT section header + Default font row
+      // survive and the Recognition section follows with no placeholder gap;
+      // the screenshot captures the collapsed layout for visual inspection.
+      await guard('context-panel-edit-content', async () => {
         await gotoStage(win, 2);
         await ensurePanelExpanded(win);
-        await win.waitForSelector('[data-edit-content-empty]', { timeout: 10000 });
+        await win.waitForSelector('[data-edit-default-font-row]', { timeout: 10000 });
+        expect(
+          await win.locator('[data-edit-content-empty]').count(),
+          'edit-content placeholder is gone',
+        ).toBe(0);
+        expect(
+          await win.locator('[data-edit-default-font-row]').count(),
+          'Default font row survives the placeholder removal',
+        ).toBeGreaterThan(0);
+        expect(
+          await win.locator('[data-context-panel-section="recognition"]').count(),
+          'Recognition section follows without a gap',
+        ).toBeGreaterThan(0);
         await win.screenshot({ path: shotPath('context-panel-edit-content', theme) });
-        headlines.editContent = (await assertEmptyState(win, '[data-edit-content-empty]', 'edit-content-empty')).headline;
 
         // NO-OP: a ContextPanel action fires its shipped dialog.
+        // TFL-1417 retired the page-panel `.context-panel-action` class in favour
+        // of direct tool icons; the Remove-blank-pages ("Clean") control is now
+        // `.context-panel-remove-blank` and keeps its `data-blank-scan-open` hook.
+        // Keep the assertion (an action fires its shipped dialog), use the current
+        // control.
         await gotoStage(win, 1);
         await ensurePanelExpanded(win);
-        const action = win.locator('.context-panel-action[data-blank-scan-open], .context-panel-action').first();
+        const action = win.locator('[data-blank-scan-open], .context-panel-action').first();
         await action.scrollIntoViewIfNeeded();
         await action.click();
         await win.waitForSelector('[data-dialog-shell], [role="dialog"]', { state: 'visible', timeout: 8000 });

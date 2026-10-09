@@ -107,6 +107,7 @@ function mountPageView(args: MountArgs = {}): {
     root.render(
       <PageView
         doc={doc}
+        tabId="tab-rotation"
         page={1}
         sourcePage={1}
         widthPt={612}
