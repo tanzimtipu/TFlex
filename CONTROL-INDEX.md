@@ -1055,5 +1055,30 @@ label-only rail/pane thumbs keep the 18px label line and their full-width box
 unchanged. qa-owned e2e `e2e/tfl1076_def612_def613_evidence.spec.cjs:192` still
 asserts the old "Viewing" text and must migrate to the eye-icon assertion.
 
+## TFL-1533 - Consolidate the in-canvas alert into one tone-grouped notice
+
+Appended 2026-10-10. `CanvasAlertNotice`
+(`src/renderer/components/CanvasAlertNotice.tsx`) now takes
+`{ warning: string[]; error: string[] }` instead of one `{ tone, messages }`
+pair, so the App mounts ONE notice with ONE collapsed "i" icon instead of a
+separate warning box and error box. Expanded, the box groups its messages by
+tone (errors first, then warnings); the group headings render only when both
+tones are present, so a single-tone notice keeps the pre-consolidation look.
+The box keeps `data-canvas-alert-tone` as the DOMINANT tone (error wins), so its
+accent and `aria-label` describe the most severe condition. Call sites updated:
+`DocumentSurfaceColumn` (`src/renderer/App.tsx`) and the Home welcome host.
+
+| Control | Selector | Promised action | Unit test |
+|---|---|---|---|
+| Consolidated notice box | `[data-canvas-alert-notice]` (`data-canvas-alert-tone` = dominant, `data-canvas-alert-state`) | One box for every pending warning/error; one `[data-canvas-alert-icon]` when collapsed | `test/unit/renderer/phase126CanvasAlert.test.tsx` |
+| Tone group | `[data-canvas-alert-group]` (`"warning"` / `"error"`) | Groups the `[data-canvas-alert-message]` items by tone; errors render first | `test/unit/renderer/phase126CanvasAlert.test.tsx` |
+| Group heading | `.canvas-alert-notice-group-label` | "Errors" / "Warnings"; rendered only when both tones are present | `test/unit/renderer/phase126CanvasAlert.test.tsx` |
+
+The Phase 126 REQUIREMENTS.md chunk and the generated
+`docs/phase-specs/phase-126.md` still describe the superseded two-box
+`{tone, messages}` design; they are the CTO's phase record and were left
+untouched by this frontend change.
+
+
 
 

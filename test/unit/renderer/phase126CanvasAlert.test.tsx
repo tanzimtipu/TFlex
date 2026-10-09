@@ -85,7 +85,7 @@ describe("phase 126 — CanvasAlertNotice: tone, rounded box, auto-collapse", ()
 
   it("warning tone renders expanded with every message", () => {
     const view = mount(
-      createElement(CanvasAlertNotice, { tone: "warning", messages: MESSAGES }),
+      createElement(CanvasAlertNotice, { warning: MESSAGES, error: [] }),
     );
     try {
       expect(stateOf(view.host)).toBe("expanded");
@@ -94,6 +94,9 @@ describe("phase 126 — CanvasAlertNotice: tone, rounded box, auto-collapse", ()
       expect(box?.getAttribute("role")).toBe("note");
       expect(box?.getAttribute("aria-label")).toBe("Warning notice");
       expect(box?.getAttribute("data-canvas-alert-tone")).toBe("warning");
+      expect(
+        view.host.querySelector('[data-canvas-alert-group="warning"]'),
+      ).not.toBeNull();
       expect(view.host.textContent).toContain("Message one.");
       expect(view.host.textContent).toContain("Message two.");
       expect(icon(view.host)).toBeNull();
@@ -104,12 +107,46 @@ describe("phase 126 — CanvasAlertNotice: tone, rounded box, auto-collapse", ()
 
   it("error tone renders the error tone attribute and label", () => {
     const view = mount(
-      createElement(CanvasAlertNotice, { tone: "error", messages: MESSAGES }),
+      createElement(CanvasAlertNotice, { warning: [], error: MESSAGES }),
     );
     try {
       const box = view.host.querySelector("[data-canvas-alert-notice]");
       expect(box?.getAttribute("data-canvas-alert-tone")).toBe("error");
       expect(box?.getAttribute("aria-label")).toBe("Error notice");
+      expect(
+        view.host.querySelector('[data-canvas-alert-group="error"]'),
+      ).not.toBeNull();
+    } finally {
+      view.cleanup();
+    }
+  });
+
+  it("consolidates both tones into ONE box with ONE icon, grouped by tone", () => {
+    const view = mount(
+      createElement(CanvasAlertNotice, {
+        warning: ["Careful."],
+        error: ["Broken."],
+      }),
+    );
+    try {
+      // Exactly one box and (while expanded) no second "i" icon.
+      expect(view.host.querySelectorAll("[data-canvas-alert-notice]").length).toBe(1);
+      expect(icon(view.host)).toBeNull();
+      // An error outranks a warning: the box carries the error tone/label...
+      const box = view.host.querySelector("[data-canvas-alert-notice]");
+      expect(box?.getAttribute("data-canvas-alert-tone")).toBe("error");
+      expect(box?.getAttribute("aria-label")).toBe("Error notice");
+      // ...and both groups are present, each labelled, errors before warnings.
+      const groups = view.host.querySelectorAll("[data-canvas-alert-group]");
+      expect(groups.length).toBe(2);
+      expect(groups[0]?.getAttribute("data-canvas-alert-group")).toBe("error");
+      expect(groups[1]?.getAttribute("data-canvas-alert-group")).toBe("warning");
+      const labels = view.host.querySelectorAll(".canvas-alert-notice-group-label");
+      expect(labels.length).toBe(2);
+      expect(labels[0]?.textContent).toBe("Errors");
+      expect(labels[1]?.textContent).toBe("Warnings");
+      expect(view.host.textContent).toContain("Broken.");
+      expect(view.host.textContent).toContain("Careful.");
     } finally {
       view.cleanup();
     }
@@ -117,7 +154,7 @@ describe("phase 126 — CanvasAlertNotice: tone, rounded box, auto-collapse", ()
 
   it("auto-collapses after ~10 s into the accessible \"i\" button", () => {
     const view = mount(
-      createElement(CanvasAlertNotice, { tone: "warning", messages: MESSAGES }),
+      createElement(CanvasAlertNotice, { warning: MESSAGES, error: [] }),
     );
     try {
       act((): void => {
@@ -150,7 +187,7 @@ describe("phase 126 — CanvasAlertNotice: tone, rounded box, auto-collapse", ()
 
   it("re-expands from the icon (messages again), then collapses from the control", () => {
     const view = mount(
-      createElement(CanvasAlertNotice, { tone: "warning", messages: MESSAGES }),
+      createElement(CanvasAlertNotice, { warning: MESSAGES, error: [] }),
     );
     try {
       act((): void => {
@@ -181,7 +218,7 @@ describe("phase 126 — CanvasAlertNotice: tone, rounded box, auto-collapse", ()
   it("renders every message of a multi-entry notice", () => {
     const many = ["First.", "Second.", "Third."] as const;
     const view = mount(
-      createElement(CanvasAlertNotice, { tone: "error", messages: many }),
+      createElement(CanvasAlertNotice, { warning: [], error: many }),
     );
     try {
       const items = view.host.querySelectorAll("[data-canvas-alert-message]");
@@ -197,7 +234,7 @@ describe("phase 126 — CanvasAlertNotice: tone, rounded box, auto-collapse", ()
   it("collapses instantly on the instant path (Animations OFF / reduced motion)", () => {
     setAnimationsEnabledPreference(false);
     const view = mount(
-      createElement(CanvasAlertNotice, { tone: "warning", messages: MESSAGES }),
+      createElement(CanvasAlertNotice, { warning: MESSAGES, error: [] }),
     );
     try {
       expect(stateOf(view.host)).toBe("expanded");
@@ -215,7 +252,7 @@ describe("phase 126 — CanvasAlertNotice: tone, rounded box, auto-collapse", ()
 
   it("renders nothing when there are no messages", () => {
     const view = mount(
-      createElement(CanvasAlertNotice, { tone: "warning", messages: [] }),
+      createElement(CanvasAlertNotice, { warning: [], error: [] }),
     );
     try {
       expect(view.host.querySelector("[data-canvas-alert-notice]")).toBeNull();

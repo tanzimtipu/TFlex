@@ -708,7 +708,9 @@ export interface DocumentSurfaceColumnProps {
   validation: ValidationNoticeState | undefined;
   protection: DocumentProtectionState | undefined;
   /** Phase 126 (chunk B1) — the active tab's in-canvas warning/error messages.
-   *  Rendered as `CanvasAlertNotice` boxes inside the canvas notice layer. */
+   *  Rendered as a single `CanvasAlertNotice` inside the canvas notice layer;
+   *  TFL-1533 consolidated the two per-tone boxes into one tone-grouped notice
+   *  with a single "i" icon. */
   alert?: { warning: string[]; error: string[] };
   /** Phase 57 (feature A) — 3D annotations the app cannot render. Rendered as
    *  a non-dismissible slim bar above the page area, never an overlay. */
@@ -759,12 +761,10 @@ export function DocumentSurfaceColumn(props: DocumentSurfaceColumnProps): ReactE
         {props.pdf3d !== undefined && props.pdf3d.length > 0 && (
           <Pdf3dNotice entries={props.pdf3d} />
         )}
-        {(alert?.warning.length ?? 0) > 0 && (
-          <CanvasAlertNotice tone="warning" messages={alert?.warning ?? []} />
-        )}
-        {(alert?.error.length ?? 0) > 0 && (
-          <CanvasAlertNotice tone="error" messages={alert?.error ?? []} />
-        )}
+        {alert !== undefined &&
+          (alert.warning.length > 0 || alert.error.length > 0) && (
+            <CanvasAlertNotice warning={alert.warning} error={alert.error} />
+          )}
       </>
     ) : undefined;
   // A component document element (DocumentView) takes the notices through the
@@ -12600,18 +12600,14 @@ pushToast(
           welcome={
             <>
               {/* Phase 126 (chunk B1) — there is no canvas on Home, so the same
-                  in-canvas alert notices render beside the welcome hero. A
-                  warning/error message is never lost. */}
-              {errorState.alerts.warning.length > 0 && (
+                  in-canvas alert notice renders beside the welcome hero. A
+                  warning/error message is never lost. TFL-1533 — one notice,
+                  one "i" icon, messages grouped by tone. */}
+              {(errorState.alerts.warning.length > 0 ||
+                errorState.alerts.error.length > 0) && (
                 <CanvasAlertNotice
-                  tone="warning"
-                  messages={errorState.alerts.warning}
-                />
-              )}
-              {errorState.alerts.error.length > 0 && (
-                <CanvasAlertNotice
-                  tone="error"
-                  messages={errorState.alerts.error}
+                  warning={errorState.alerts.warning}
+                  error={errorState.alerts.error}
                 />
               )}
             <Welcome

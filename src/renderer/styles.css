@@ -22918,6 +22918,42 @@ cursor: pointer;
   margin: 0;
 }
 
+/* TFL-1533 — one notice now carries every tone. The body stacks the tone
+ * groups; the collapse control stays pinned to the box's top-right. Each group
+ * is a labelled block whose heading takes its tone accent, so a mixed notice
+ * reads as two clearly separated sections rather than one ambiguous list. */
+.canvas-alert-notice-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.canvas-alert-notice-group {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.canvas-alert-notice-group-label {
+  margin: 0;
+  font-size: var(--fs-xs);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+}
+
+.canvas-alert-notice-group[data-canvas-alert-group="error"] .canvas-alert-notice-group-label {
+  color: var(--error);
+}
+
+.canvas-alert-notice-group[data-canvas-alert-group="warning"] .canvas-alert-notice-group-label {
+  color: var(--warning);
+}
+
 /* Phase 126 — the collapse control mirrors the sibling notices' own hover ink
  * and never lifts off the box. */
 .canvas-alert-notice-collapse {
