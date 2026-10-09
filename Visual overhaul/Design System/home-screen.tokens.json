@@ -24,7 +24,7 @@
   "extends": "quiet-precision.tokens.json",
   "status": "proposal",
   "textRoleOverride": {
-    "lightSupportingForeground": "#667085",
+    "lightSupportingForeground": "#5b6577",
     "darkSupportingForeground": "#929BAC",
     "scope": "Small readable supporting text on opaque UI surfaces"
   }

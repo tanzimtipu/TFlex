@@ -84,11 +84,20 @@ async function collectDock() {
 }
 
 // The registry's dock sets (DOCK_STAGE_IDS) — the unchanged contract.
+// Re-baselined (TFL-1489) to the shipped `DOCK_STAGE_IDS` in
+// src/renderer/state/toolsRegistry.ts: later phases (37, 104) added the review
+// form/engineering verbs and the xlsx/pptx/encrypt deliver verbs, so the
+// phase-42-era lists were stale. The rendered dock still equals the registry
+// set exactly; only this expectation moved.
 const EXPECTED = {
   pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete', 'merge', 'cropPages'],
-  edit: ['editText', 'editImage', 'editTextBox', 'editToolOff', 'recognizeText', 'batchOcr', 'ocrSuspects'],
-  review: ['annotate', 'sign', 'stamp', 'flatten', 'watermark', 'exportComments', 'importComments'],
-  deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'createFromImages'],
+  edit: ['editToolOff', 'editText', 'editImage', 'editTextBox', 'recognizeText', 'batchOcr', 'ocrSuspects'],
+  review: [
+    'annotate', 'sign', 'stamp', 'flatten', 'watermark', 'bates', 'exportComments',
+    'importComments', 'fillFromCsv', 'exportFormData', 'importFormData',
+    'validateDocument', 'sanitize', 'engineeringLayers', 'documentInfo',
+  ],
+  deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'exportXlsx', 'exportPptx', 'createFromImages', 'encrypt'],
 };
 
 // ---------------------------------------------------------------------------
@@ -157,18 +166,42 @@ test('P42-2 fixed icons: standard 20px glyphs; EDIT + REVIEW dock screenshots', 
   await win.screenshot({ path: EDIT_SHOT });
   console.log(`[p42] screenshot: ${EDIT_SHOT}`);
 
-  // REVIEW dock — watermark (Droplet), sign (Signature), annotate (Brush),
-  // exportComments (FileDown), importComments (FileUp) are the changed entries.
+  // Re-baselined (TFL-1489). The reviewer "changed entries" watermark,
+  // exportComments and importComments are non-primary under the Phase 104
+  // responsive curation, so they now render in the dock's More overflow rather
+  // than as inline 20px tiles. The inline review tiles (annotate, sign, stamp,
+  // bates) still carry the standard 20px glyph; the overflow rows use the
+  // shared menu's md icon, so `flatten` (a long-standing non-primary review
+  // verb) is measured as the control and the three changed ids must match it.
   await setStage(3);
-  const watermark = await glyph('watermark');
   const sign = await glyph('sign');
   const annotate = await glyph('annotate');
-  const exportComments = await glyph('exportComments');
-  const importComments = await glyph('importComments');
-  console.log(`[P42-2] REVIEW glyphs watermark=${JSON.stringify(watermark)} sign=${JSON.stringify(sign)} annotate=${JSON.stringify(annotate)} exportComments=${JSON.stringify(exportComments)} importComments=${JSON.stringify(importComments)}`);
-  for (const [id, g] of [['watermark', watermark], ['sign', sign], ['annotate', annotate], ['exportComments', exportComments], ['importComments', importComments]]) {
+  console.log(`[P42-2] REVIEW tile glyphs annotate=${JSON.stringify(annotate)} sign=${JSON.stringify(sign)}`);
+  for (const [id, g] of [['annotate', annotate], ['sign', sign]]) {
     expect(g, `${id} glyph is the standard 20px`).toEqual({ w: 20, h: 20 });
   }
+
+  const overflowGlyph = async (id) => {
+    const svg = win.locator(`[data-dock-overflow-item="${id}"] svg`).first();
+    await svg.waitFor({ state: 'visible', timeout: 8000 });
+    return svg.evaluate((el) => {
+      const r = el.getBoundingClientRect();
+      return { w: Math.round(r.width), h: Math.round(r.height) };
+    });
+  };
+  await win.locator('[data-dock-overflow]').first().click();
+  await win.waitForSelector('[data-dock-overflow-menu]', { state: 'visible', timeout: 8000 });
+  const control = await overflowGlyph('flatten');
+  const overflowChanged = {};
+  for (const id of ['watermark', 'exportComments', 'importComments']) {
+    overflowChanged[id] = await overflowGlyph(id);
+  }
+  console.log(`[P42-2] REVIEW overflow control flatten=${JSON.stringify(control)} changed=${JSON.stringify(overflowChanged)}`);
+  for (const [id, g] of Object.entries(overflowChanged)) {
+    expect(g, `overflow ${id} uses the standard menu glyph`).toEqual(control);
+  }
+  await win.keyboard.press('Escape');
+  await win.waitForTimeout(200);
   await win.screenshot({ path: REVIEW_SHOT });
   console.log(`[p42] screenshot: ${REVIEW_SHOT}`);
 });

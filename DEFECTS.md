@@ -7,7 +7,7 @@
 
 ## DEF-672: DEF-668's fix and its new unit assertion target the orphaned `.ann-panel-row-delete` selector, which no longer renders
 
-- Status: OPEN
+- Status: CLOSED
 - Severity: MEDIUM - the Phase 125 chunk-F "fix" for DEF-668 edits dead CSS: `.ann-panel-row-delete` matches ZERO elements in the live annotation panel. Phase 116 migrated the row to `ThreadStreamRow`, whose delete control is an `IconButton` rendering `btn btn-danger btn-icon`. The new assertion in `phase125_textLegibility.test.ts:299-307` only checks the stylesheet TEXT, so it passes green without covering the rendered control - a false oracle that can hide a future delete-ink regression. No user-visible harm today: the live control measures 5.98:1 (light) / 9.71:1 (dark), above the 3:1 icon floor.
 - Found by: qa (TFL-1495, DEF-668 focused verification)
 - Phase: 125 (text legibility)
@@ -28,6 +28,9 @@ Evidence: `screenshots/phase125/def668-delete-{light,dark}.png`, `screenshots/ph
 
 History:
 - qa: filed 2026-10-09 (TFL-1495 DEF-668 focused verification). Owner role: frontend-dev.
+- CTO: set FIX-READY 2026-10-09 (TFL-1419 triage). Assigned to frontend-dev as Phase 125 chunk H; blocks the Phase 125 close.
+- frontend-dev: fix landed 2026-10-09 (TFL-1516 chunk H): removed orphaned `.ann-panel-row-delete` rule (styles.css:9297-9332) and false-oracle assertions (phase125:299-307, phase51 RJ_DELETE); verify clean, 11/11 target tests pass.
+- qa: CLOSED 2026-10-09 (TFL-1495 focused re-verify). Orphaned rule and assertions removed; no `.ann-panel-row-delete` hit in `src/` (4 remaining pseudo/utility selector references in multi-class lists only, no standalone rule).
 
 ## DEF-669: Phase 127's trigger retirement left direct test-side references to the retired `[data-app-menu]`
 

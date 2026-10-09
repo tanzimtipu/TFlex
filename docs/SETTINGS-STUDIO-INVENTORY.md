@@ -22,20 +22,22 @@ keyboard route to the theme state. The single host state is
 
 | # | Surface | Command id / action | Accelerator | Handler `file:line` | Selector reached | Notes |
 | --- | --- | --- | --- | --- | --- | --- |
-| 1 | Renderer app-menu model (Edit group) | id `prefs`, action `preferences` | `Ctrl+,` | row `src/renderer/App.tsx:9893` | `.titlebar-menu-row` / `[data-menu-action]` | Source of the popover row rendered by TitleBar and AppHeader |
+| 1 | Renderer menu model (Edit group) | id `prefs`, action `preferences` | `Ctrl+,` | row `src/renderer/App.tsx` (`menuGroups`, Edit group) | `.titlebar-menu-row` / `[data-menu-action]` | Source of the row rendered by the TitleBar `File` popover (Phase 127: the File menu holds every group) |
 | 2 | Native application menu (Edit) | action `preferences` | `CmdOrCtrl+,` | `src/main/menu.ts:118-120` (`click: () => send('preferences')`) | OS menu | Main pushes `menu:action` |
-| 3 | Menu dispatch | action `preferences` | n/a | `src/renderer/state/menuActions.ts:107,120` (`case 'preferences': ctx.preferences()`) | n/a | Shared dispatcher for native menu, TitleBar popover (`TitleBar.tsx:226`), AppHeader popover (`AppHeader.tsx:246`) |
+| 3 | Menu dispatch | action `preferences` | n/a | `src/renderer/state/menuActions.ts:107,120` (`case 'preferences': ctx.preferences()`) | n/a | Shared dispatcher for native menu, the TitleBar File popover (`TitleBar.tsx:226`) and the restored settings gear (direct `onOpenPreferences`) |
 | 4 | Menu context | `preferences` | n/a | `src/renderer/App.tsx:5510-5512` (`setPrefsOpen(true)`) | n/a | The host handler the dispatcher calls |
 | 5 | Command palette | `preferences` | `Ctrl+,` (label only) | `src/renderer/App.tsx:11223` (`preferences: () => setPrefsOpen(true)`); registry `src/renderer/state/toolsRegistry.ts:1311-1319` | palette row | Same host state |
 | 6 | Home editable tool row | `preferences` | n/a | `src/renderer/App.tsx:11295` (`preferences: () => setPrefsOpen(true)`); candidates `:11315` | Home tile / picker | Runs only when a Home tile is set to Preferences |
 | 7 | Stage Rail gear | n/a (direct) | n/a | `src/renderer/App.tsx:11711` (`onOpenPreferences={() => setPrefsOpen(true)}`); prop `StageRail.tsx:81,161` | `.stage-rail` gear button | Document surfaces only (not Home) |
-| 8 | Header / theme control | retired | n/a | `src/renderer/App.tsx:1807-1811` | none | The borderless 4-option theme picker was RETIRED from the title row (Phase 105 chunk C). No live header theme control exists today. |
+| 8 | Header / theme control | direct (`onThemeChange`) | n/a | `src/renderer/App.tsx` (`onThemeChange` -> `resolveThemeDefault` -> `trackAndSave`); rendered by `AppHeader.tsx` (`[data-theme-toggle]`) | `.theme-toggle` / `[data-theme-option]` | Phase 127 restored the labelled v1.50.0 theme dropdown in the title row: current-theme icon + label + chevron opening the four-option list, persisting `themeDefault` + concrete `theme` through the same store as the Preferences dropdown. |
 | 9 | Theme keyboard/menu route | action `toggleTheme` | `Ctrl+Shift+T` | menu row `App.tsx:9900`; native `src/main/menu.ts:128-130`; palette `App.tsx:11222`; Home tile `App.tsx:11301`; handler `onToggleTheme` `App.tsx:1790-1805` | n/a | Reaches the same theme state as the Preferences dropdown, via `applyToggleTheme` |
 | 10 | Dialog mount / host wiring | n/a | n/a | `src/renderer/App.tsx:13138-13222` | `[data-prefs-dialog]` | `<PreferencesDialog>`; all setters listed in section 2 |
 
-The Preferences sheet's own trigger inside the sheet queries the app-menu
-button for focus return: `document.querySelector('[data-app-menu]')`
-(`src/renderer/components/PreferencesDialog.tsx:195`, DEF-611).
+The Preferences sheet's own trigger inside the sheet queries the settings-gear
+button for focus return: `document.querySelector('[data-open-preferences]')`
+(`src/renderer/components/PreferencesDialog.tsx`, DEF-611). Phase 127 restored the
+title-row gear (the Phase-105 application-menu trigger that temporarily owned this
+return-focus query is retired).
 
 ## 2. Setting table
 

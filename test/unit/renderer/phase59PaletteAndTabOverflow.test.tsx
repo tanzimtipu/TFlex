@@ -57,7 +57,6 @@ const REMOVED_ACTIONS = [
   'openRecent',
   'removeRecent',
   'openSample',
-  'appMenu',
   'panePick',
   'paneResize',
 ] as const;
@@ -73,7 +72,6 @@ const REMOVED_IDS = [
   'openRecent',
   'removeRecent',
   'openSample',
-  'appMenu',
   'panePick',
   'paneResize',
 ] as const;

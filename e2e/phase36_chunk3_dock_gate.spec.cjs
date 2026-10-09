@@ -12,7 +12,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
 const { launchApp } = require('./lib/launch.cjs');
-const { hardClose, toggleMultiModeViaPalette, armAnnotationTool } = require('./lib/helpers.cjs');
+const { hardClose, toggleMultiModeViaPalette, armAnnotationTool, clickDockVerb } = require('./lib/helpers.cjs');
 
 // The harness launches this worker with ELECTRON_RUN_AS_NODE=1; Playwright's
 // Electron driver needs it cleared to launch the real app.
@@ -81,14 +81,23 @@ async function loadSettings() {
   return r && r.ok ? r.value : null;
 }
 
-// RE-DERIVED for Phase 37 (item 21): the dock now renders the stage's FULL
-// relevant set by default (DOCK_STAGE_IDS in toolsRegistry), not the Phase-36
-// curated subset. `editMode` is retired (the EDIT stage is the switch).
+// RE-DERIVED for Phase 37 (item 21): the dock renders the stage's FULL relevant
+// set by default (DOCK_STAGE_IDS in toolsRegistry), not the Phase-36 curated
+// subset. `editMode` is retired (the EDIT stage is the switch). Re-baselined
+// again (TFL-1489) to the shipped DOCK_STAGE_IDS, then to the shipped RENDER
+// ORDER (TFL-1503): Phase 104 splits each stage set into the ~5 curated PRIMARY
+// tiles rendered INLINE first, then every remaining DOCK_STAGE_IDS id in the
+// `...` More overflow. `dockVerbs()` concatenates inline + overflow, so the
+// expected order is DOCK_PRIMARY_IDS then the stage-set remainder.
 const EXPECTED = {
-  pages: ['rotate', 'extract', 'insertPages', 'replacePages', 'split', 'delete', 'merge', 'cropPages'],
-  edit: ['editText', 'editImage', 'editTextBox', 'editToolOff', 'recognizeText', 'batchOcr', 'ocrSuspects'],
-  review: ['annotate', 'sign', 'stamp', 'flatten', 'watermark', 'exportComments', 'importComments'],
-  deliver: ['optimize', 'audit', 'exportPages', 'exportText', 'exportDocx', 'createFromImages'],
+  pages: ['rotate', 'extract', 'insertPages', 'merge', 'cropPages', 'replacePages', 'split', 'delete'],
+  edit: ['editToolOff', 'editText', 'editImage', 'editTextBox', 'recognizeText', 'batchOcr', 'ocrSuspects'],
+  review: [
+    'annotate', 'sign', 'stamp', 'bates', 'flatten', 'watermark', 'exportComments',
+    'importComments', 'fillFromCsv', 'exportFormData', 'importFormData',
+    'validateDocument', 'sanitize', 'engineeringLayers', 'documentInfo',
+  ],
+  deliver: ['optimize', 'exportPages', 'exportText', 'exportDocx', 'encrypt', 'audit', 'exportXlsx', 'exportPptx', 'createFromImages'],
 };
 
 // ---------------------------------------------------------------------------
@@ -116,9 +125,12 @@ test('P36-C3-A dock: the four stage verb sets, the accent-soft primary, a disabl
   const primary = win.locator('[data-dock-group="primary"] .action-dock-verb').first();
   expect(await primary.getAttribute('data-dock-verb')).toBe('rotate');
   expect(await primary.evaluate((el) => el.classList.contains('action-dock-verb-primary'))).toBe(true);
-  const primaryBg = await primary.evaluate((el) => getComputedStyle(el).backgroundColor);
-  console.log(`[P36C3-A] primary bg=${primaryBg}`);
-  expect(primaryBg).not.toBe('rgba(0, 0, 0, 0)');
+  const primaryLabel = (await primary.locator('.action-dock-label').innerText()).trim();
+  console.log(`[P36C3-A] primary label="${primaryLabel}"`);
+  // Phase 113 (Quiet Actions) retired the Phase-36 accent-soft FILL; the primary
+  // tile is now a QUIET control whose treatment is the `action-dock-verb-primary`
+  // class (asserted above) plus its curated short label (DOCK_SHORT_LABELS).
+  expect(primaryLabel, 'the primary tile shows the curated short label').toBe('Rotate');
 
   // DEF-311 retest — a disabled verb's tooltip is the availability REASON, not
   // the description. Phase 37 item 13: entering EDIT enables Edit mode, so the
@@ -184,7 +196,14 @@ test('P36-C3-B selection override: [N pages] chip + bulk Rotate/Extract/Delete a
   const chip = await win.locator('[data-dock-chip]').innerText();
   console.log(`[P36C3-B] chip="${chip}" verbs=${JSON.stringify(await dockVerbs())}`);
 expect(chip).toBe('3 pages');
-  expect(await dockVerbs()).toEqual(['rotate', 'extract', 'delete', 'clearPageSelection']);
+  // Phase 104 (TFL-1503) — in State 2 the four bulk verbs are the INLINE tiles;
+  // the stage's displaced primaries and secondary verbs stay reachable in the
+  // `...` More overflow (DEF-569), so the full rendered set is the bulk verbs
+  // first, then every PAGES membership id not already shown as a bulk tile.
+  expect(await dockVerbs()).toEqual([
+    'rotate', 'extract', 'delete', 'clearPageSelection',
+    'insertPages', 'replacePages', 'split', 'merge', 'cropPages',
+  ]);
 
   // Bulk Rotate rotates exactly the selected pages (existing engine path). The
   // engine stores rotation as a quarter-turn count (0..3), so cw = 1.
@@ -217,6 +236,22 @@ expect(chip).toBe('3 pages');
 // ---------------------------------------------------------------------------
 test('P36-C3-C pins (Phase 37 item 21): un-pin a default verb, re-pin restores, cap at 4', async () => {
   await openSample();
+
+  // TFL-1503 — seed four GLOBAL pins through the settings writer BEFORE any
+  // local settings write in this session. The rotate below (and the palette
+  // write) bumps the renderer's write sequence, after which the DEF-037
+  // stale-echo filter would discard an external seed as an older reflection.
+  // TFL-660: the four curated DOCK_GLOBAL_IDS are the only cross-stage-legal
+  // pins visible in every stage.
+  {
+    const seeded = await loadSettings();
+    await win.evaluate((v) => window.tflex.saveSettings(v), {
+      ...seeded,
+      dockPins: ['undo', 'redo', 'openReadingView', 'openComicView'],
+      dockUnpinned: [],
+    });
+    await win.waitForTimeout(900);
+  }
 
   // TFL-660 — make ONE undoable change so the curated global `undo` is live.
   // A fresh open carries an empty undo stack, so `undo`'s own dock gate greys
@@ -261,20 +296,22 @@ test('P36-C3-C pins (Phase 37 item 21): un-pin a default verb, re-pin restores, 
   };
 
   // --- Phase 37 item 21: UN-PIN a default PAGES verb. It leaves the dock and
-  // is recorded in `dockUnpinned` (the inverse of a pin). ---
+  // is recorded in `dockUnpinned` (the inverse of a pin). The pin menu is only
+  // reachable by right-clicking an INLINE tile (Phase 104 moved `split` into the
+  // More overflow), so un-pin a curated PRIMARY verb (`cropPages`). ---
   await setStage(1);
-  await openMenu('split');
+  await openMenu('cropPages');
   await invokeMenu('unpin');
-  expect(await win.locator('[data-dock-verb="split"]').count(), 'the un-pinned default verb is gone').toBe(0);
+  expect(await win.locator('[data-dock-verb="cropPages"]').count(), 'the un-pinned default verb is gone').toBe(0);
   let stored = null;
   const t0 = Date.now();
   while (Date.now() - t0 < 10000) {
     const s = await loadSettings();
-    if (s && Array.isArray(s.dockUnpinned) && s.dockUnpinned.includes('split')) { stored = s.dockUnpinned; break; }
+    if (s && Array.isArray(s.dockUnpinned) && s.dockUnpinned.includes('cropPages')) { stored = s.dockUnpinned; break; }
     await win.waitForTimeout(250);
   }
-  console.log(`[P36C3-C] after unpin: split=${await win.locator('[data-dock-verb="split"]').count()} dockUnpinned=${JSON.stringify(stored)}`);
-  expect(stored, 'the un-pin is recorded in dockUnpinned').toContain('split');
+  console.log(`[P36C3-C] after unpin: cropPages=${await win.locator('[data-dock-verb="cropPages"]').count()} dockUnpinned=${JSON.stringify(stored)}`);
+  expect(stored, 'the un-pin is recorded in dockUnpinned').toContain('cropPages');
 
   // --- RE-PIN via the Command Palette Ctrl+Enter RESTORES the default verb
   // (pinDockTool drops it from `unpinned` rather than storing a redundant pin). ---
@@ -284,32 +321,23 @@ test('P36-C3-C pins (Phase 37 item 21): un-pin a default verb, re-pin restores, 
   });
   await win.keyboard.press('Control+k');
   await win.waitForSelector('[data-command-palette]', { timeout: 8000 });
-  await win.fill('[data-command-palette-input]', 'split pages');
+  await win.fill('[data-command-palette-input]', 'crop pages');
   await win.waitForTimeout(250);
-  await win.locator('[data-palette-tool-id="split"]').first().hover();
+  await win.locator('[data-palette-tool-id="cropPages"]').first().hover();
   await win.keyboard.press('Control+Enter');
   await win.waitForTimeout(600);
   await win.keyboard.press('Escape');
   await win.waitForSelector('[data-command-palette]', { state: 'detached', timeout: 8000 });
   await setStage(1);
   const s2 = await loadSettings();
-  console.log(`[P36C3-C] after re-pin: split=${await win.locator('[data-dock-verb="split"]').count()} dockUnpinned=${JSON.stringify(s2 && s2.dockUnpinned)}`);
-  expect(await win.locator('[data-dock-verb="split"]').count(), 're-pinning a default verb restores it').toBe(1);
-  expect((s2 && s2.dockUnpinned) || [], 'the un-pin is cleared on re-pin').not.toContain('split');
+  console.log(`[P36C3-C] after re-pin: cropPages=${await win.locator('[data-dock-verb="cropPages"]').count()} dockUnpinned=${JSON.stringify(s2 && s2.dockUnpinned)}`);
+  expect(await win.locator('[data-dock-verb="cropPages"]').count(), 're-pinning a default verb restores it').toBe(1);
+  expect((s2 && s2.dockUnpinned) || [], 'the un-pin is cleared on re-pin').not.toContain('cropPages');
 
-  // --- cap at 4: seed four GLOBAL pins, then the Pin item is refused. ---
-  // TFL-660 — a dock may host only the curated DOCK_GLOBAL_IDS plus the stage
-  // dock sets. The four curated globals are the only NON-default ids that are
-  // legal, visible in every stage and reachable here; the old panel-surface
-  // globals (panMode/paneOpen/paneClear) are dropped by `sanitizeDockPins`.
-  const s3 = await loadSettings();
-  await win.evaluate((v) => window.tflex.saveSettings(v), {
-    ...s3,
-    dockPins: ['redo', 'undo', 'openReadingView', 'openComicView'],
-    dockUnpinned: [],
-  });
-  await win.waitForTimeout(800);
+  // --- cap at 4: the four curated GLOBAL pins (seeded at the top of this test)
+  // are rendered after the divider, and the Pin item stays offered. ---
   await setStage(1);
+  await win.waitForTimeout(600);
   const pinnedIds = await win.$$eval('[data-action-dock] [data-dock-pin]', (els) =>
     els.map((e) => e.getAttribute('data-dock-pin')));
   console.log(`[P36C3-C] seeded global pins=${JSON.stringify(pinnedIds)} divider=${await win.locator('[data-dock-divider]').count()}`);
@@ -364,7 +392,9 @@ test('P36-C3-D dock curation (un-pin) persists across a relaunch', async () => {
     await first.w.keyboard.press('Control+1');
     await first.w.waitForTimeout(400);
     // Phase 37 item 21 — un-pin a default verb: it is recorded in dockUnpinned.
-    await first.w.locator('[data-dock-verb="split"]').first().click({ button: 'right' });
+    // Phase 104 (TFL-1503) — the pin menu opens only on an INLINE tile, so use a
+    // curated PRIMARY (`cropPages`; `split` moved into the More overflow).
+    await first.w.locator('[data-dock-verb="cropPages"]').first().click({ button: 'right' });
     await first.w.waitForSelector('[data-dock-menu]', { state: 'visible', timeout: 8000 });
     await first.w.locator('[data-dock-menu-item="unpin"]').click();
 
@@ -373,12 +403,12 @@ test('P36-C3-D dock curation (un-pin) persists across a relaunch', async () => {
     while (Date.now() - start < 15000) {
       try {
         const s = JSON.parse(fs.readFileSync(file, 'utf8'));
-        if (Array.isArray(s.dockUnpinned) && s.dockUnpinned.includes('split')) { stored = s.dockUnpinned; break; }
+        if (Array.isArray(s.dockUnpinned) && s.dockUnpinned.includes('cropPages')) { stored = s.dockUnpinned; break; }
       } catch { /* not written yet */ }
       await new Promise((r) => setTimeout(r, 200));
     }
     console.log(`[P36C3-D] persisted dockUnpinned=${JSON.stringify(stored)}`);
-    expect(stored, 'dockUnpinned written to settings.json on unpin').toContain('split');
+    expect(stored, 'dockUnpinned written to settings.json on unpin').toContain('cropPages');
   } finally {
     await hardClose(first.a, 'p36-c3-persist-1');
   }
@@ -390,7 +420,7 @@ test('P36-C3-D dock curation (un-pin) persists across a relaunch', async () => {
     const verbs = await second.w.$$eval('[data-action-dock] [data-dock-verb]', (els) =>
       els.map((e) => e.getAttribute('data-dock-verb')));
     console.log(`[P36C3-D] after relaunch (PAGES) verbs=${JSON.stringify(verbs)}`);
-    expect(verbs, 'the un-pin survives the relaunch').not.toContain('split');
+    expect(verbs, 'the un-pin survives the relaunch').not.toContain('cropPages');
   } finally {
     await hardClose(second.a, 'p36-c3-persist-2');
   }
@@ -532,7 +562,14 @@ test('P36-C3-F responsive: labels drop <880px, compact plan fits <640px', async 
   await openSample();
   const dock = win.locator('[data-action-dock]');
   const setSize = (w, h) => app.evaluate(({ BrowserWindow }, s) => {
-    BrowserWindow.getAllWindows()[0].setSize(s[0], s[1]);
+    const bw = BrowserWindow.getAllWindows()[0];
+    if (bw === undefined) return;
+    // DEF-422/TFL-1503 — a maximized window ignores setSize, and the main
+    // window's minimum width is 960 (src/main/window.ts). Unmaximize and lower
+    // the minimum before sizing below 960, or the sub-960 rungs never apply.
+    bw.unmaximize();
+    bw.setMinimumSize(300, 300);
+    bw.setSize(s[0], s[1]);
   }, [w, h]);
   const hostW = () => win.evaluate(() => document.querySelector('[data-action-dock]').parentElement.clientWidth);
 
@@ -581,18 +618,15 @@ test('P36-C3-F responsive: labels drop <880px, compact plan fits <640px', async 
   const inlineVerbs = await win.locator('[data-action-dock] [data-dock-verb]').count();
   const chipCount = await win.locator('[data-dock-overflow]').count();
   console.log(`[P36C3-F] 620 host=${host620} compact=${await dock.getAttribute('data-dock-compact')} arrows=${await dock.getAttribute('data-dock-arrows')} arrowsLane=${await dock.getAttribute('data-dock-arrows-lane')} inlineVerbs=${inlineVerbs} overflowChip=${chipCount}`);
-  // Phase 37 item 6 — at the arrows rung every PAGES verb stays inline and the
-  // row scrolls; nothing is hidden behind a `...` chip and nothing is clipped.
-  expect(chipCount, 'the arrows rung replaces the overflow chip').toBe(0);
-  expect(inlineVerbs, 'every PAGES verb is rendered inline at the arrows rung').toBe(8);
-  const scrollRow = await win.evaluate(() => {
-    const el = document.querySelector('[data-dock-scroll]');
-    return { overflowX: getComputedStyle(el).overflowX, scrollWidth: el.scrollWidth, clientWidth: el.clientWidth };
-  });
-  console.log(`[P36C3-F] 620 scroller=${JSON.stringify(scrollRow)}`);
-  expect(scrollRow.overflowX, 'the arrows rung makes the row horizontally scrollable').toBe('auto');
-  // Horizontal overflow is the SCROLL (allowed); only vertical clipping would
-  // mean the row stacked. Assert the verbs stay on the dock's single row.
+  // Phase 104 (TFL-1503) — the More utility is a STABLE control rendered OUTSIDE
+  // the scroll strip (always present, never hidden), and the curated PAGES
+  // PRIMARY set rides inline. At this icon-only rung the five tiles fit, so no
+  // arrows render (DEF-337) and the row never wraps or clips. (The Phase-36
+  // "8 verbs inline, no chip" contract predated the primary/More split.)
+  expect(chipCount, 'the stable More utility is present outside the scroll strip').toBe(1);
+  expect(inlineVerbs, 'the curated PAGES primaries are rendered inline').toBe(5);
+  // Horizontal overflow would be a SCROLL (allowed); only VERTICAL clipping would
+  // mean the row stacked. Assert every verb stays on the dock's single row.
   const clipped = await win.evaluate(() => {
     const d = document.querySelector('[data-action-dock]');
     const dr = d.getBoundingClientRect();
@@ -621,7 +655,14 @@ test('P36-C3-N dock containment: nothing paints or hit-tests outside the dock at
   await openSample();
   const dock = win.locator('[data-action-dock]');
   const setSize = (w, h) => app.evaluate(({ BrowserWindow }, s) => {
-    BrowserWindow.getAllWindows()[0].setSize(s[0], s[1]);
+    const bw = BrowserWindow.getAllWindows()[0];
+    if (bw === undefined) return;
+    // DEF-422/TFL-1503 — a maximized window ignores setSize, and the main
+    // window's minimum width is 960 (src/main/window.ts). Unmaximize and lower
+    // the minimum before sizing below 960, or the sub-960 rungs never apply.
+    bw.unmaximize();
+    bw.setMinimumSize(300, 300);
+    bw.setSize(s[0], s[1]);
   }, [w, h]);
 
   for (const w of [1440, 1100, 900, 760]) {
@@ -880,12 +921,10 @@ test('P36-C3-G view strip: page steps/jump, zoom + fit + pan, per-pane footers i
 
   // Multi Mode (Phase 109 chunk B): each non-empty pane carries its OWN View
   // Strip footer inside its own pane bounds (the shared dock stays at the
-  // workspace bottom-centre). Phase 105 relocated the Multi Mode toggle into
-  // the application menu, so drive it there (the retired
-  // `[data-header-multi-mode]` title-bar control no longer exists).
-  await win.locator('[data-app-menu]').first().click();
-  await win.waitForSelector('[data-app-menu-popover]', { state: 'visible', timeout: 8000 });
-  await win.locator('[data-app-menu-popover] [data-menu-action="multiMode"]').first().click();
+  // workspace bottom-centre). TFL-1503 — Phase 127 restored the v1.50.0
+  // title-row control `[data-header-multi-mode]`, so drive the canonical
+  // `toggleMultiModeViaPalette` helper (the Phase-105 app-menu row is gone).
+  await toggleMultiModeViaPalette(win);
   await win.waitForSelector('.tab-pane[data-pane="B"]', { timeout: 15000 });
   await win.waitForTimeout(900);
   const multiStrips = await win.evaluate(() => {
@@ -925,16 +964,21 @@ test('P36-C3-H flyout: one surface, all tools, arming runs the action, Esc close
   const tools = await win.$$eval('[data-ann-tools-visible] button[data-tool]', (els) =>
     els.map((e) => e.getAttribute('data-tool')));
   console.log(`[P36C3-H] flyout visible tools=${JSON.stringify(tools)}`);
-  for (const t of ['select', 'highlight', 'underline', 'strikeout', 'ink']) {
-    expect(tools, `flyout hosts '${t}'`).toContain(t);
-  }
+  // Phase 19/104 (TFL-1503) — the visible five are `visibleAnnotationTools(MRU)`
+  // (MRU-first, padded from the canonical order), so their IDENTITY is not fixed
+  // per launch; the contract is five UNIQUE canonical tools. The toolbar's own
+  // dropdown lists the FULL canonical set, so the union is the whole surface.
+  const CANONICAL = ['select', 'highlight', 'underline', 'strikeout', 'ink', 'textbox', 'rect', 'ellipse', 'arrow', 'callout', 'note'];
+  expect(tools.length, 'flyout shows five visible tool buttons').toBe(5);
+  for (const t of tools) expect(CANONICAL, `visible tool '${t}' is canonical`).toContain(t);
+  expect(new Set(tools).size, 'the visible five are unique').toBe(5);
   // The rest of the set lives in the toolbar's own dropdown, one surface away.
   await win.locator('[data-ann-dropdown-toggle]').click();
   await win.waitForSelector('[data-ann-dropdown-menu]', { state: 'visible', timeout: 8000 });
   const moreTools = await win.$$eval('[data-ann-dropdown-menu] button[data-tool]', (els) =>
     els.map((e) => e.getAttribute('data-tool')));
   console.log(`[P36C3-H] flyout dropdown tools=${JSON.stringify(moreTools)}`);
-  for (const t of ['textbox', 'rect', 'ellipse', 'arrow', 'callout', 'note']) {
+  for (const t of CANONICAL) {
     expect(moreTools, `flyout dropdown hosts '${t}'`).toContain(t);
   }
   // Arm 'rect' straight from the same dropdown (it selects and closes the
@@ -965,7 +1009,9 @@ test('P36-C3-H flyout: one surface, all tools, arming runs the action, Esc close
   // Esc dismisses in a clean state (no armed tool / selection to consume it).
   await win.locator('[data-dock-verb="annotate"]').click();
   await expect(win.locator('[data-annotation-flyout]')).toBeVisible();
-  await win.locator('[data-ann-tools-visible] button[data-tool="select"]').click();
+  // `select` may not be one of the five visible MRU tiles; arm it through the
+  // canonical helper, which falls back to the dropdown when it is not on screen.
+  await armAnnotationTool(win, 'select');
   await win.waitForTimeout(300);
   await win.keyboard.press('Escape');
   await win.waitForTimeout(500);
@@ -1011,6 +1057,7 @@ test('P36-C3-I retirement: no command row, the canvas reclaimed its height, scre
     const wm = document.querySelector('.workspace-main');
     const sc = document.querySelector('.document-scroller');
     const tb = document.querySelector('.titlebar');
+    const dr = document.querySelector('[data-document-rail]');
     const wmr = wm.getBoundingClientRect();
     const scr = sc.getBoundingClientRect();
     const tbr = tb.getBoundingClientRect();
@@ -1019,18 +1066,23 @@ test('P36-C3-I retirement: no command row, the canvas reclaimed its height, scre
       workspaceTop: Math.round(wmr.top),
       scrollerTop: Math.round(scr.top),
       gap: Math.round(scr.top - wmr.top),
+      documentRail: dr ? Math.round(dr.getBoundingClientRect().height) : 0,
       chromeVar: getComputedStyle(wm).getPropertyValue('--tf-chrome-y').trim(),
     };
   });
   console.log(`[P36C3-I] geometry=${JSON.stringify(geom)}`);
   expect(geom.gap, 'no chrome row between the workspace top and the canvas').toBe(0);
-  expect(geom.scrollerTop - geom.titlebarBottom, 'canvas begins at the title bar').toBeLessThanOrEqual(2);
-  console.log('[P36C3-I] the retired row measured 53px in the chunk-2 no-regression run (--tf-chrome-y), now reclaimed');
+  // TFL-1503 — Phase 105 (chunk C) added the 40px document rail as a SECOND row
+  // between the title bar and `.app-main`; the retired per-view command ROW is
+  // still gone, so the canvas begins directly below the title bar + ONLY that
+  // rail. Assert the gap is bounded by the rail's own height (not a hidden row).
+  console.log(`[P36C3-I] document rail=${geom.documentRail}px; the retired row measured 53px in the chunk-2 no-regression run (--tf-chrome-y), now reclaimed`);
+  expect(geom.scrollerTop - geom.titlebarBottom, 'canvas begins below the title bar + the document rail').toBeLessThanOrEqual(geom.documentRail + 2);
 
   // --- screenshot 1: PAGES stage, current page selected, dock + pills ---
-  // DEF-313 is fixed, so the page can be set from the PAGES stage directly
-  // (the dock no longer covers the pill).
-  const input = win.locator('[data-page-pill] input.page-input');
+  // Phase 109 retired the per-pane CanvasPills; page navigation lives on the
+  // unified View Strip footer, so set the page from ITS page input.
+  const input = win.locator('[data-view-strip] input.page-input');
   await input.fill('2');
   await input.press('Enter');
   await win.waitForTimeout(900);
@@ -1083,8 +1135,9 @@ test('P36-C3-J reachability: every relocated control acts from its new home', as
   expect(rot, 'the PAGES dock Rotate verb rotated the current page').toBe(1);
   log('rotate -> PAGES dock', rotateEnabled && rot === 1, `rotations[0]=${rot}`);
 
-  // delete -> PAGES dock (opens the existing delete dialog)
-  await win.locator('[data-dock-verb="delete"]').click();
+  // delete -> PAGES dock (opens the existing delete dialog). Phase 104 moved
+  // delete into the More overflow; clickDockVerb reaches whichever lane hosts it.
+  await clickDockVerb(win, 1, 'delete');
   await win.waitForSelector('[data-delete-pages-dialog]', { state: 'visible', timeout: 8000 });
   log('delete -> PAGES dock', true, 'delete-pages dialog opened');
   await win.keyboard.press('Escape');
@@ -1098,9 +1151,8 @@ test('P36-C3-J reachability: every relocated control acts from its new home', as
   await win.keyboard.press('Escape');
   await win.waitForTimeout(500);
 
-  // split -> PAGES dock
-  await setStage(1);
-  await win.locator('[data-dock-verb="split"]').click();
+  // split -> PAGES dock (Phase 104 moved it into the More overflow)
+  await clickDockVerb(win, 1, 'split');
   await win.waitForSelector('#split-dialog-title', { state: 'visible', timeout: 8000 });
   log('split -> PAGES dock', true, 'split dialog opened');
   await win.keyboard.press('Escape');
@@ -1148,17 +1200,18 @@ test('P36-C3-J reachability: every relocated control acts from its new home', as
 
   // optimize / audit -> DELIVER dock
   await setStage(4);
-  // page nav -> the page pill; zoom/fit/pan -> the zoom pill (their native
-  // homes). Checked here because the PAGES dock covers the pills (filed defect).
-  const pillInput = win.locator('[data-page-pill] input.page-input');
+  // Phase 109 retired the per-pane CanvasPills; page navigation and
+  // zoom/fit/pan now live on the unified View Strip footer (DEF-580 migration).
+  const strip = win.locator('[data-view-strip]');
+  const pillInput = strip.locator('input.page-input');
   await pillInput.fill('3');
   await pillInput.press('Enter');
   await win.waitForTimeout(800);
   expect(await pillInput.inputValue()).toBe('3');
-  expect(await win.locator('[data-zoom-pill] [aria-label="Zoom in"]').count()).toBe(1);
-  expect(await win.locator('[data-zoom-pill] [aria-label="Fit width"]').count()).toBe(1);
-  expect(await win.locator('[data-zoom-pill] [data-hand-toggle]').count()).toBe(1);
-  log('page-nav/zoom/fit/pan -> pills', true, 'page=3; pill controls present');
+  expect(await strip.locator('.view-strip-view [aria-label="Zoom in"]').count()).toBe(1);
+  expect(await strip.locator('.view-strip-view [aria-label="Fit width"]').count()).toBe(1);
+  expect(await strip.locator('.view-strip-view [data-hand-toggle]').count()).toBe(1);
+  log('page-nav/zoom/fit/pan -> view strip', true, 'page=3; footer controls present');
 
   await win.locator('[data-dock-verb="optimize"]').click();
   await win.waitForSelector('.optimize-dialog', { state: 'visible', timeout: 8000 });
@@ -1166,8 +1219,8 @@ test('P36-C3-J reachability: every relocated control acts from its new home', as
   await win.keyboard.press('Escape');
   await win.waitForTimeout(600);
 
-  await setStage(4);
-  await win.locator('[data-dock-verb="audit"]').click();
+  // audit -> DELIVER dock (Phase 104 moved audit into the More overflow)
+  await clickDockVerb(win, 4, 'audit');
   await win.waitForSelector('.audit-dialog', { state: 'visible', timeout: 8000 });
   log('audit -> DELIVER dock', true, 'audit dialog opened');
   await win.keyboard.press('Escape');
@@ -1213,22 +1266,18 @@ test('P36-C3-K reachability on a form document: flatten acts from the REVIEW doc
   console.log('[P36C3-K] empty-space click cleared the panel selection');
 
   await setStage(3);
-  const clickDock = async (id) => {
-    if ((await win.locator(`[data-dock-verb="${id}"]`).count()) > 0) {
-      await win.locator(`[data-dock-verb="${id}"]`).first().click();
-      return;
-    }
-    await win.locator('[data-dock-overflow]').first().click();
-    await win.waitForSelector('[data-dock-overflow-menu]', { state: 'visible', timeout: 8000 });
-    await win.locator(`[data-dock-overflow-item="${id}"]`).first().click();
-  };
+  // TFL-1503 — `flatten` is a non-primary REVIEW verb (Phase 104), so it lives
+  // in the More overflow, not inline. Open the overflow, wait for the form
+  // document to enable the row, then run it.
+  await win.locator('[data-dock-overflow]').first().click();
+  await win.waitForSelector('[data-dock-overflow-menu]', { state: 'visible', timeout: 8000 });
   await win.waitForFunction(() => {
-    const b = document.querySelector('[data-dock-verb="flatten"]');
+    const b = document.querySelector('[data-dock-overflow-item="flatten"]');
     return b !== null && b.disabled === false;
   }, null, { timeout: 20000 });
   // TFL-1436 (C2) - the `forms` dock verb is retired; the old forms step opened
   // the same FlattenConfirmDialog already verified above.
-  await clickDock('flatten');
+  await win.locator('[data-dock-overflow-item="flatten"]').first().click();
   await win.waitForSelector('#flatten-title', { state: 'visible', timeout: 10000 });
   console.log('[P36C3-K] flatten dialog opened on form.pdf');
   await win.keyboard.press('Escape');

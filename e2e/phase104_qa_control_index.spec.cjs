@@ -416,7 +416,10 @@ test('Phase 104 control-index sweep (a-h) + stage screenshots', async () => {
   expect(end, 'End focuses the last row (Customize dock)').toBe('customize');
 
   await win.keyboard.press('Escape');
-  await win.waitForTimeout(300);
+  // Phase 105 guidance: an exiting surface stays in the DOM (opacity 0) until
+  // AnimatePresence completes the exit morph, so sampling after a fixed delay is
+  // racy. Wait for the surface to detach, then read the close state.
+  await win.waitForSelector('[data-dock-overflow-menu]', { state: 'detached', timeout: 5000 }).catch(() => {});
   const afterEscape = await win.evaluate(() => ({
     menu: !!document.querySelector('[data-dock-overflow-menu]'),
     expanded: document.querySelector('[data-dock-overflow]')?.getAttribute('aria-expanded'),
@@ -432,7 +435,7 @@ test('Phase 104 control-index sweep (a-h) + stage screenshots', async () => {
   await win.locator('[data-dock-overflow]').first().click();
   await win.waitForSelector('[data-dock-overflow-menu]', { state: 'visible', timeout: 8000 });
   await win.mouse.click(5, 5);
-  await win.waitForTimeout(300);
+  await win.waitForSelector('[data-dock-overflow-menu]', { state: 'detached', timeout: 5000 }).catch(() => {});
   expect(await win.locator('[data-dock-overflow-menu]').count(), 'outside click dismisses More').toBe(0);
 
   // Observation: in a stage whose FIRST More row is disabled (EDIT: batchOcr /

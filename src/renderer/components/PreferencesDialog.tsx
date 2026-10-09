@@ -240,7 +240,7 @@ export function PreferencesDialog(props: PreferencesDialogProps): ReactElement |
     }
     if (focusSeededRef.current) return;
     focusSeededRef.current = true;
-    returnFocusRef.current = document.querySelector<HTMLElement>('[data-app-menu]');
+    returnFocusRef.current = document.querySelector<HTMLElement>('[data-open-preferences]');
   }, [open]);
 
   useEffect(() => {

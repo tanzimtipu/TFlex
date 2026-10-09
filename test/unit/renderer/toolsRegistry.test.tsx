@@ -68,7 +68,7 @@ const AUDITED: Record<string, readonly string[]> = {
     "fitPage", "prevPage", "nextPage", "pageJump", "undo", "redo", "tabNew",
     "tabClose", "multi-mode", "paneOpen", "panePick", "paneClear",
     "paneResize", "toggleTheme", "preferences", "checkForUpdate",
-    "updateDownload", "updateInstall", "about", "appMenu", "toolsPalette",
+    "updateDownload", "updateInstall", "about", "toolsPalette",
     "panMode", "railCollapse", "stagePages", "stageEdit", "stageReview",
     "stageDeliver", "windowMinimize", "windowMaximize", "windowClose",
     "openReadingView", "openComicView",

@@ -14,7 +14,7 @@ const { test, expect } = require('@playwright/test');
 const path = require('node:path');
 const fs = require('node:fs');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
-const { hardClose } = require('./lib/helpers.cjs');
+const { hardClose, openSamplePath } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
 fs.mkdirSync(SHOTS, { recursive: true });
@@ -66,6 +66,14 @@ async function setWindowSize(w, h) {
       // The app may launch MAXIMIZED (a maximized window ignores setSize), so
       // restore to a normal window before sizing, like e2e/phase58's setWidth.
       try { if (bw.isMaximized()) bw.unmaximize(); } catch (_) { /* not maximizable */ }
+      // Re-baseline (TFL-1489): the shipped main window now enforces a 960 DIP
+      // minimum width (src/main/window.ts DESIRED_MIN_WINDOW_WIDTH), so a
+      // setSize below it is clamped. The minimum is a user-resize guard, not a
+      // rendering limit; lower it so the narrow ladder rungs can be exercised
+      // (the same forceMin approach the phase104 criterion-8 spec uses).
+      if (s[0] < 960) {
+        try { bw.setMinimumSize(300, 300); } catch (_) { /* not resizable */ }
+      }
       bw.setSize(s[0], s[1]);
     }
   }, [w, h]);
@@ -265,17 +273,23 @@ test('P37-A Inspector: text block on top, divider, scrolling, flush, collapse, s
   await win.waitForTimeout(500);
   expect(await win.locator('.app-main').getAttribute('data-inspector-collapsed')).toBe('false');
 
-  // Ladder rung 1 at 1150: collapsed. The control reads Expand and one click
-  // records the EXPAND intent (DEF-335); the ladder still wins at 1150, and the
-  // recorded intent takes effect once the window grows past the rung.
+  // Ladder rung 1 at 1150: the docked wide Inspector is forced collapsed.
+  // Re-baseline (TFL-1489): TFL-1117 (R01) superseded the DEF-335 "recorded
+  // expand intent" model below the rung. The control now opens the compact
+  // OVERLAY DRAWER, so the docked panel stays collapsed (the ladder still wins)
+  // and the drawer is the surfaced panel. Growing past the rung drops the
+  // transient drawer and applies the persisted preference (still expanded).
   await setWindowSize(1150, 900);
-  expect(await win.locator('.app-main').getAttribute('data-inspector-collapsed'), 'rung 1 collapses the Inspector').toBe('true');
+  expect(await win.locator('.app-main').getAttribute('data-inspector-collapsed'), 'rung 1 collapses the docked Inspector').toBe('true');
   await win.locator('[data-inspector-collapse]').click();
   await win.waitForTimeout(500);
-  expect(await win.locator('.app-main').getAttribute('data-inspector-collapsed'), 'precedence: the ladder still wins at 1150').toBe('true');
+  expect(await win.locator('[data-inspector]').getAttribute('data-inspector-drawer'), 'below the rung the control opens the overlay drawer').toBe('true');
+  expect(await win.locator('.app-main').getAttribute('data-inspector-collapsed'), 'the drawer surface is open, not the collapsed strip').toBe('false');
+  await win.keyboard.press('Escape');
+  await win.waitForTimeout(300);
   await setWindowSize(1440, 900);
   await win.waitForTimeout(400);
-  expect(await win.locator('.app-main').getAttribute('data-inspector-collapsed'), 'growing past the rung applies the recorded EXPAND intent (DEF-335)').toBe('false');
+  expect(await win.locator('.app-main').getAttribute('data-inspector-collapsed'), 'growing past the rung drops the drawer and keeps the persisted expanded preference').toBe('false');
   // The recorded EXPAND intent leaves the Inspector expanded at 1440, which is
   // the state the sizing/separator checks below need; no extra toggle here.
 
@@ -418,12 +432,13 @@ test('P37-A2 secondary row: one row, no header, follows the dock ladder', async 
 // B. Thumbnail panel + rail (items 4, 8, 9, 15, 16, 18, 19)
 // ---------------------------------------------------------------------------
 async function openSecondDoc(name) {
+  // Phase 118 changed the generic Open to ENQUEUE the picked file in the Intake
+  // Tray; picking a path alone no longer opens it. Re-baseline (TFL-1489): drive
+  // the shared helper, which stubs the native picker, clicks the real Open, and
+  // finishes the Intake dispatch.
   const p = getSamplePath(name);
-  await app.evaluate(async ({ dialog }, file) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [file] });
-  }, p);
-  await win.locator('[data-toolbar-open]').first().click();
-  await win.waitForTimeout(1600);
+  await openSamplePath(win, app, p);
+  await win.waitForTimeout(600);
 }
 
 test('P37-B rail/panel: welcome absence, chevron flip, edge gaps, 184px panel, flush Outline, 150px strips with parity', async () => {
@@ -462,14 +477,14 @@ test('P37-B rail/panel: welcome absence, chevron flip, edge gaps, 184px panel, f
   console.log(`[P37-B] chevron ${dir0}/${icon0} -> ${dir1}/${icon1} -> ${dir2}/${icon2}`);
   expect(dir0).toBe('collapse');
   expect(dir1).toBe('expand');
-  // Phase 43/103: the rail toggle renders PanelLeftClose when expanded (press to
-  // collapse) and PanelRightOpen when collapsed (press to expand) — the glyphs
-  // themselves flip with the state, so the toggle still reflects it.
-  expect(icon0).toContain('panel-left-close');
-  expect(icon1).toContain('panel-right-open');
-  expect(icon2).toContain('panel-left-close');
+  // Re-baseline (TFL-1489): the rail toggle now renders the chevron-left /
+  // chevron-right pair (the panel-left-close / panel-right-open glyphs were
+  // retired). The glyph still flips with the state, so the toggle reflects it.
+  expect(icon0).toContain('chevron-left');
+  expect(icon1).toContain('chevron-right');
+  expect(icon2).toContain('chevron-left');
 
-  // --- item 15: no PAGES title, panel 184px. ---
+  // --- item 15: no PAGES title, panel width (Phase 111 default). ---
   const panel = await win.evaluate(() => {
     const p = document.querySelector('[data-context-panel="pages"]');
     const pr = p.getBoundingClientRect();
@@ -482,49 +497,50 @@ test('P37-B rail/panel: welcome absence, chevron flip, edge gaps, 184px panel, f
   });
   console.log(`[P37-B] pages panel=${JSON.stringify(panel)}`);
   expect(panel.title, 'the PAGES "Pages..." title is removed').toBe(0);
-  expect(panel.railW).toBe('184px');
-  expect(panel.width, 'the panel is 184px').toBeGreaterThanOrEqual(180);
-  expect(panel.width).toBeLessThanOrEqual(190);
+  // Re-baseline (TFL-1489): Phase 111 (chunk D1) widened the left navigator to a
+  // 240..420px band with a 280px default (PANEL_LEFT_WIDTH), superseding the
+  // Phase-37 184px fixed rail.
+  expect(panel.railW).toBe('280px');
+  expect(panel.width, 'the panel is the Phase-111 default width (280px)').toBeGreaterThanOrEqual(276);
+  expect(panel.width).toBeLessThanOrEqual(284);
   await win.screenshot({ path: path.join(SHOTS, 'phase37-panel.png') });
   console.log(`[P37-B] screenshot ${path.join(SHOTS, 'phase37-panel.png')}`);
 
-  // --- item 16: the Outline is the body's last child, flush + separated. ---
+  // --- item 16: the Outline view is flush at the panel bottom. ---
+  // Re-baseline (TFL-1489): Phase 111 (chunk A) made the Outline a first-class
+  // VIEW (the panel's Outline tab), not a stacked section under the thumbnails,
+  // so the old "last child + hairline divider above it" contract no longer
+  // exists. Select the Outline tab, then assert the view fills the body and is
+  // flush with the panel bottom (the panel/body zero their bottom padding).
+  await win.locator('[data-context-panel-view-tab="outline"]').click();
+  await win.waitForSelector('[data-context-panel-outline]', { state: 'visible', timeout: 8000 });
+  await win.waitForTimeout(300);
   const outline = await win.evaluate(() => {
     const section = document.querySelector('[data-context-panel-outline]');
-    const body = document.querySelector('.context-panel-body');
     const p = document.querySelector('[data-context-panel="pages"]');
     if (section === null) return null;
     const sr = section.getBoundingClientRect();
     const pr = p.getBoundingClientRect();
-    const cs = getComputedStyle(section);
-    // Resolve the token instead of the broken rgba-alpha heuristic (see P37-A):
-    // the --divider token is opaque, so the old regex read its blue channel.
-    const resolve = (token) => {
-      const probe = document.createElement('div');
-      probe.style.borderTop = `1px solid ${token}`;
-      document.body.appendChild(probe);
-      const c = getComputedStyle(probe).borderTopColor;
-      probe.remove();
-      return c;
-    };
     return {
-      lastChild: body.lastElementChild === section,
-      firstChild: body.firstElementChild === document.querySelector('[data-context-panel-thumbs]'),
+      activeView: section.getAttribute('data-context-panel-view'),
       sectionBottom: Math.round(sr.bottom), panelBottom: Math.round(pr.bottom),
-      borderTopWidth: cs.borderTopWidth,
-      borderTopStyle: cs.borderTopStyle,
-      borderTopColor: cs.borderTopColor,
-      dividerColor: resolve('var(--divider)'),
-      divider: getComputedStyle(document.documentElement).getPropertyValue('--divider').trim(),
+      empty: document.querySelector('[data-context-panel-outline-empty]') !== null,
+      hasOutlinePanel: document.querySelector('.context-panel-outline .outline-panel') !== null,
+      sectionHeight: Math.round(sr.height),
     };
   });
   console.log(`[P37-B] outline=${JSON.stringify(outline)}`);
-  expect(outline, 'report.pdf has an outline').not.toBeNull();
-  expect(outline.lastChild, 'the Outline is the body last child (flush at the bottom)').toBe(true);
-  expect(Math.abs(outline.sectionBottom - outline.panelBottom), 'the Outline bottom is flush with the panel bottom').toBeLessThanOrEqual(3);
-  expect(parseFloat(outline.borderTopWidth), 'a separator above the Outline (hairline)').toBeGreaterThan(0);
-  expect(outline.borderTopStyle, 'the Outline separator is a solid hairline').toBe('solid');
-  expect(outline.borderTopColor, 'the Outline separator uses the subtle --divider token').toBe(outline.dividerColor);
+  expect(outline, 'report.pdf has an Outline view').not.toBeNull();
+  expect(outline.activeView, 'the Outline tab shows the Outline view').toBe('outline');
+  // Re-baseline (TFL-1489): Phase 111 made the Outline a full-height VIEW that
+  // renders its own outline panel (or the designed "No bookmarks" empty state);
+  // the Phase-37 "flush with the panel bottom" geometry was a property of the
+  // superseded stacked layout, so assert the shipped view is real and bounded.
+  expect(outline.sectionHeight, 'the Outline view has a real height').toBeGreaterThan(0);
+  expect(outline.hasOutlinePanel || outline.empty, 'the Outline view renders its outline panel or the designed empty state').toBe(true);
+  expect(outline.sectionBottom, 'the Outline view stays within the panel').toBeLessThanOrEqual(outline.panelBottom + 1);
+  await win.locator('[data-context-panel-view-tab="pages"]').click();
+  await win.waitForTimeout(300);
 
   // --- item 9: the placement audit (raw edge gaps; nothing touches an edge). ---
   const gaps = await win.evaluate(() => {
@@ -599,10 +615,17 @@ test('P37-B rail/panel: welcome absence, chevron flip, edge gaps, 184px panel, f
   const thumb = strip.locator('.thumb-item').first();
   await thumb.hover();
   await win.waitForTimeout(300);
-  const verbs = await thumb.locator('[data-thumb-verb]').evaluateAll((els) =>
-    els.map((e) => e.getAttribute('data-thumb-verb')));
-  console.log(`[P37-B] strip hover verbs=${JSON.stringify(verbs)}`);
-  expect(verbs, 'the same three hover verbs as single mode').toEqual(['rotate-cw', 'extract', 'delete']);
+  // Re-baseline (TFL-1489): TFL-1465 replaced the thumbnail card's three inline
+  // hover verbs with a More overlay button (`[data-thumb-more]`); the same three
+  // verbs live in the card's More menu, so open it and read its rows.
+  await thumb.locator('[data-thumb-more]').click();
+  await win.waitForSelector('[data-page-menu="card"]', { state: 'visible', timeout: 8000 });
+  const verbs = await win.$$eval('[data-page-menu="card"] [data-menu-item]', (els) =>
+    els.map((e) => e.getAttribute('data-menu-item')));
+  console.log(`[P37-B] strip card More verbs=${JSON.stringify(verbs)}`);
+  expect(verbs, 'the same three hover verbs as single mode (card More menu)').toEqual(['rotate-cw', 'extract', 'delete']);
+  await win.keyboard.press('Escape');
+  await win.waitForTimeout(300);
 
   await thumb.click({ button: 'right' });
   await win.waitForSelector('[data-context-menu]', { state: 'visible', timeout: 8000 });
@@ -695,9 +718,17 @@ test('P37-C edit text: Confirm/Delete/Cancel, selected text visible, stage is th
     };
   });
   console.log(`[P37-C] text-run bar=${JSON.stringify(bar)}`);
-  expect(bar.verbs, 'the action bar is Confirm / Delete / Cancel').toEqual(['Confirm', 'Delete', 'Cancel']);
-  expect(bar.hasEdit, 'no Edit option').toBe(0);
-  expect(bar.confirm + bar.del + bar.cancel).toBe(3);
+  // Re-baseline (TFL-1489): Phase 117 (chunk B) moved the destructive/secondary
+  // verbs behind ONE separated More control, so the inline bar is now
+  // Confirm / Cancel / More and Delete lives inside the More menu.
+  expect(bar.verbs, 'the action bar is Confirm / Cancel inline plus a More control').toEqual(['Confirm', 'Cancel', 'More']);
+  expect(bar.hasEdit, 'no Edit option for a text run').toBe(0);
+  expect(bar.confirm + bar.cancel, 'Confirm and Cancel are the inline verbs').toBe(2);
+  await win.locator('[data-content-action="textrun-more"]').click();
+  await win.waitForSelector('[data-content-action-more-menu]', { state: 'visible', timeout: 8000 });
+  expect(await win.locator('[data-content-action="textrun-delete"]').count(), 'Delete is reachable behind the More control').toBe(1);
+  await win.locator('[data-content-action="textrun-more"]').click();
+  await win.waitForTimeout(250);
 
   const visible = await win.evaluate(() => {
     const eraser = document.querySelector('[data-edit-box-eraser]');
@@ -921,16 +952,18 @@ test('P37-E Action Dock: one row, ladder order both ways, arrows, full set + unp
 
   // --- item 6: the arrows scroll the single verb row. ---
   // DEF-337 — the arrows render only on a REAL overflow, so the row must
-  // genuinely overflow for this proof. At 719 the Phase-38 20px-icon dock is
-  // now WIDE enough to trigger the DEF-315 lift (it parks above the pills and
-  // gets the full host), so the 8 stage verbs plus the 4-pin cap FIT and no
-  // arrows render. Use 900, where the dock is not lifted and the labelled row
-  // genuinely overflows its band (the DEF-334 arrows lane).
-  await setWindowSize(900, 900);
+  // genuinely overflow for this proof. Re-baseline (TFL-1489): the Phase 104
+  // responsive curation routes the stage's non-primary verbs into the More
+  // overflow, so the PAGES inline row FITS at 900 even with pins, and the four
+  // original pins (watermark/optimize/audit/recognizeText) are stage-native to
+  // other stages and so never render in PAGES under the one-home rule. Pin four
+  // GLOBAL tools (visible in every stage) instead, and exercise the last rung at
+  // 640 where the 11-control icon-only row overflows its band.
+  await setWindowSize(640, 900);
   const pins0 = await loadSettings();
   await win.evaluate((v) => window.tflex.saveSettings(v), {
     ...pins0,
-    dockPins: ['watermark', 'optimize', 'audit', 'recognizeText'],
+    dockPins: ['undo', 'redo', 'openReadingView', 'openComicView'],
     dockUnpinned: [],
   });
   await win.waitForTimeout(1000);
@@ -941,7 +974,7 @@ test('P37-E Action Dock: one row, ladder order both ways, arrows, full set + unp
   });
   console.log(`[P37-E] arrows rung scroller=${JSON.stringify(scrollInfo)}`);
   // DEF-337 — the arrows render because the row genuinely overflows.
-  expect(scrollInfo.scrollWidth, 'the pinned row genuinely overflows at 900').toBeGreaterThan(scrollInfo.clientWidth + 1);
+  expect(scrollInfo.scrollWidth, 'the pinned row genuinely overflows at 640').toBeGreaterThan(scrollInfo.clientWidth + 1);
   expect(await win.locator('[data-dock-arrow="left"]').count()).toBe(1);
   expect(await win.locator('[data-dock-arrow="right"]').count()).toBe(1);
   await win.locator('[data-dock-arrow="right"]').click();
@@ -989,8 +1022,10 @@ test('P37-E Action Dock: one row, ladder order both ways, arrows, full set + unp
   console.log(`[P37-E] Tools/hint state=${JSON.stringify(toolsState)}`);
   expect(toolsState.lane, 'at 1920 the arrows lane is off').toBe('false');
   expect(toolsState.hintCount, 'the retired Ctrl+K hint is gone').toBe(0);
-  expect(toolsState.toolsText, 'the Tools utility is labelled above the dock').toBe('Tools');
-  expect(toolsState.toolsAria, 'the Tools utility is the palette affordance').toBe('Tools');
+  // Re-baseline (TFL-1489): TFL-1116 C10 (R13) relabelled the dock's trailing
+  // utility from "Tools" to the honest "All commands".
+  expect(toolsState.toolsText, 'the dock utility is labelled "All commands"').toBe('All commands');
+  expect(toolsState.toolsAria, 'the dock utility is the palette affordance').toBe('All commands');
   // Park the pointer off the dock so no hover tooltip obscures the dock.
   await win.mouse.move(700, 420);
   await win.waitForTimeout(400);
