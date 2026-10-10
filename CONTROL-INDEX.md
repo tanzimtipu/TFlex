@@ -919,13 +919,23 @@ bottom-right, clear of the View Strip footer and Focus Dock), and drives it from
 real producers. C4b wires the OCR producer (`runOcrForActiveTab` /
 `cancelOcrForActiveTab` / `subscribeOcrProgress`); C5 wires the conversion
 producer (`openConvertedFromPath` -> `convertStartAction` /
-`convertProgressAction`, cancel via `convertShelfOpRef` -> `convert:cancel`) and
-removes the standalone `<ConversionProgress>` widget, so the shelf is the single
-running affordance for an import. `runConvertOpen` now settles as a discriminated
+`convertProgressAction`, cancel via `convertShelfOpRef` -> `convert:cancel`).
+The standalone `<ConversionProgress>` widget was NOT removed: it is present again
+for the import path (TFL-1644 / DEF-685) at `App.tsx:14004` (component
+`ConversionNotice.tsx:141-185`, selectors `[data-conversion-progress]` /
+`[data-conversion-job]`, Cancel control `[data-conversion-cancel]`) and owns the
+Cancel control for an in-flight import. `runConvertOpen` now settles as a discriminated
 `{ kind: 'opened'; tabId: string } | { kind: 'cancelled' } | { kind: 'failed' }`.
 Progress text is always "N of M unit" or an
 indeterminate phase, never a percentage or ETA; a cancel REQUEST reads
 "Cancelling..." and never "Cancelled" before the engine confirms it.
+
+NOTE: the window-level Activity Shelf App mount this table describes was RETIRED
+(TFL-1549); the table is kept as the historical record. Its in-canvas successor is
+`ActivityAlertNotice` (`src/renderer/components/ActivityAlertNotice.tsx`, mounted
+inside `DocumentSurfaceColumn`'s canvas notices cluster after `CanvasAlertNotice`,
+`src/renderer/App.tsx:828-835`; selectors `[data-activity-alert-notice]` /
+`[data-activity-alert-collapse]` / `[data-activity-alert-icon]`).
 
 | Control | Selector | Contract | Unit test | e2e |
 |---|---|---|---|---|
