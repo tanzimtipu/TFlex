@@ -7,9 +7,10 @@
 
 ## DEF-681: CONTROL-INDEX cites tfl1620_exitTransitions.test.tsx as evidence for the ContextPanel drawer dismiss, but that file has no ContextPanel test (false coverage claim)
 
-- Status: OPEN
+- Status: FIX-READY
 - Severity: LOW
 - Found by: qa (TFL-1625 focused verification of TFL-1620)
+- Fixed by: frontend-dev (TFL-1628)
 - Phase: Exit transitions (TFL-1620, parent TFL-1605) — documentation accuracy, not a product failure
 
 Steps to reproduce:
@@ -25,7 +26,7 @@ Evidence:
 - The ContextPanel exit works (verified live in the running app): a per-frame sampler observed `.context-panel.context-panel-drawer--leaving` for ~9 frames (~150 ms) with `animation-name: context-drawer-out`, `pointer-events: none`.
 - Gap closed by the new durable e2e `e2e/tfl1625_exit_transitions.spec.cjs` (1 passed), which asserts the reverse keyframe for both drawer surfaces.
 
-Fix direction: correct the CONTROL-INDEX evidence cell to cite `e2e/tfl1625_exit_transitions.spec.cjs`, or add a ContextPanel drawer unit test in `tfl1620_exitTransitions.test.tsx`. QA test/doc maintenance; no product change required.
+Fix: CONTROL-INDEX.md TFL-1620 motion table updated by TFL-1628 to cite `e2e/tfl1625_exit_transitions.spec.cjs` for the ContextPanel drawer dismiss row. Commit pending with TFL-1605 phase-close.
 
 ## DEF-680: phase109_viewstrip P109-12 compact-tier assertion is unreachable after the window minimum width rose to 960 (test-oracle drift)
 

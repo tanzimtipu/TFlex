@@ -1288,7 +1288,7 @@ unit tests only.
 | Motion | Selector | Behaviour | Evidence |
 |---|---|---|---|
 | Inspector drawer dismiss | `.inspector.inspector-drawer--leaving` | reverse slide + opacity out, MICRO, pointer-events pinned | `test/unit/renderer/tfl1620_exitTransitions.test.tsx`, `tfl1116_compactInspectorDrawer.test.tsx` |
-| ContextPanel drawer dismiss | `.context-panel.context-panel-drawer--leaving` | reverse slide + opacity out, MICRO, pointer-events pinned | `test/unit/renderer/tfl1620_exitTransitions.test.tsx` |
+| ContextPanel drawer dismiss | `.context-panel.context-panel-drawer--leaving` | reverse slide + opacity out, MICRO, pointer-events pinned | `e2e/tfl1625_exit_transitions.spec.cjs` |
 | Activity Shelf panel dismiss | `.activity-shelf-panel--leaving` | reverse rise + opacity out, MICRO; onClose deferred | `test/unit/renderer/tfl1620_exitTransitions.test.tsx`, `activityShelf.test.tsx` |
 | Exit state machine | `src/renderer/hooks/useExitTransition.ts` | hold one exit band; cancel on re-open; instant when Animations OFF | `test/unit/renderer/tfl1620_exitTransitions.test.tsx` |
 
