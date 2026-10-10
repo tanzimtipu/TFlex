@@ -1,5 +1,20 @@
 # AGENTS_NOTES.md — archived operational history
 
+## 2026-10-10: The adversary's ledger edit can be destructive — ADVERSARIAL_REVIEW.md must be append-only (TFL-1566)
+
+The TFL-1566 diff-pass (ADV-1633) REWROTE `ADVERSARIAL_REVIEW.md` instead of prepending its
+new entry: the worktree file lost the ADV-1552-01 block (its `ACCEPTED -> DEF-677`
+Disposition) and the ADV-1552-02 header/opening, leaving a dangling mid-sentence fragment, and
+dropped the duplicate ADV-1609 copy. Same class as the 2026-10-08 ledger-truncation entry, but
+at the source write rather than the commit stage. Caught by diffing the ledger vs HEAD before
+the phase-close commit (`grep -c 'DEF-677'` = 0 vs HEAD's 1). CTO restored the prior content
+verbatim from `git show HEAD:ADVERSARIAL_REVIEW.md` and kept the new ADV-1633 entry. Rule:
+`ADVERSARIAL_REVIEW.md` and `DEFECTS.md` are append-only shared memory — an author PREPENDS its
+entry and never reformats, reorders, or deletes existing entries. The commit-stage check
+(ledger line-count delta vs HEAD, net deletion = stop-and-confirm) is the backstop; before the
+phase-close commit, verify every prior `DEF-` / disposition cue line still has the same
+`grep -c` count as HEAD.
+
 ## 2026-10-09: Phase-close commit must gate on the QA verdict, not a sibling's completion (TFL-1430 Phase 127)
 
 Phase 127 chained A (dev) -> B (qa) -> C (adversary) -> D (git-agent commit). D was
