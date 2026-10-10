@@ -185,3 +185,186 @@ The notice correctly displays operation count (e.g., "1 operation", "2 operation
 All three findings triaged to REJECTED with reason. No material defects identified by adversary. The chrome tab redo passes adversarial review.
 
 **CTO disposition:** No defects accepted. Proceed to phase-close commit.
+
+---
+
+## Phase 128 (TFL-1571) diff-pass — scanned-document instant open/switch cache
+
+**Agent:** adversary
+**Scope:** Session-level page bitmap cache for scanned documents
+**Session:** diff-pass
+**Date:** 2026-10-10
+**Fixture:** `assets/samples/scanned.pdf` (500,493 bytes, 6 pages)
+**Overall:** PASS — no material defects found
+
+### Files under review
+- `src/renderer/pdf/pageBitmapCache.ts` (whole file, 129 lines)
+- `src/renderer/components/PageView.tsx:535-560` (cache-hit early return), `846-853` (capture+store)
+- `src/renderer/App.tsx:2506` (eager page-1 pre-render), `8945` (invalidateProxyCache), `3341` (clearTabCache in performCloseTab)
+- `test/unit/renderer/pageBitmapCache.test.ts` (existing unit coverage)
+- `e2e/tfl1571_scanned_instant.spec.cjs` (e2e benchmark)
+
+### Cache API (verbatim)
+- `key = ${tabId}:${sourcePage}:${cssScale}:${rotation}`
+- `getCachedBitmap(tabId, sourcePage, cssScale, rotation): ImageBitmap | null` (refreshes LRU timestamp on hit)
+- `setCachedBitmap(tabId, sourcePage, cssScale, rotation, bitmap): void` (replacing a key calls `bitmap.close()` on the old one)
+- `pruneTabCache(tabId, maxEntries = 24): void` (LRU by timestamp; evicts with `bitmap.close()`)
+- `clearTabCache(tabId): void` (closes every bitmap)
+- `invalidateProxyCache(tabId)` is an alias of `clearTabCache(tabId)`
+- `PAGE_BITMAP_CACHE_LIMIT = 24`
+
+### Required attacks executed
+
+#### 1. Close-while-referenced / use-after-close (ADV-1571-01)
+**Probe:** `clearTabCache` calls `bitmap.close()` while `PageView.tsx:539-560` may still hold that same `ImageBitmap` and `drawImage` it on the next render.
+
+**What I did:**
+1. Set a bitmap in the cache
+2. Called `clearTabCache` (simulating tab close)
+3. Verified the bitmap's `close()` was called and `bitmap.closed` flag set to `true`
+4. Checked if a subsequent `drawImage` would throw
+
+**Expected:** If PageView tries to `drawImage` a closed bitmap, it should throw "ImageBitmap is closed" or similar.
+
+**What happened:** The bitmap is correctly closed with `close()` called once. However, the implementation is SAFE because:
+- `performCloseTab` (App.tsx:3341) calls `clearTabCache` AFTER `setOpenTabs` removes the tab from state
+- React's render cycle runs AFTER state updates, so PageView unmounts BEFORE the cache is cleared
+- PageView's cleanup (`useEffect` return at line 875) cancels deferred render tasks on unmount
+
+**Verdict:** SAFE — React's state-update → unmount → cleanup ordering prevents use-after-close.
+
+#### 2. Stale bitmap across proxy refresh (ADV-1571-02)
+**Probe:** Edit a document (forces `refreshDocProxyFor` then `invalidateProxyCache` at App.tsx:8945). Confirm post-edit content is shown, never the pre-edit cached bitmap.
+
+**What I did:**
+1. Set a bitmap in the cache (simulating pre-edit render)
+2. Called `invalidateProxyCache` (alias of `clearTabCache`)
+3. Verified `getCachedBitmap` returns `null`
+
+**Expected:** Cache should be cleared before any subsequent read, forcing a re-render with the new document.
+
+**What happened:** `invalidateProxyCache` correctly clears all cached bitmaps. The call at App.tsx:8945 runs BEFORE the new `doc` prop is passed to `DocumentView`, so any subsequent `getCachedBitmap` call misses and forces a fresh render.
+
+**Verdict:** SAFE — Invalidation runs before cache read, preventing stale bitmap reuse.
+
+#### 3. Zoom / rotation identity (ADV-1571-03)
+**Probe:** The key includes `cssScale` and `rotation`. Zoom in then switch back — expect a miss and a correct paint, never a wrong-scale/rotation bitmap.
+
+**What I did:**
+1. Stored a bitmap at `cssScale = 1.5`
+2. Looked up at `cssScale = 1.5000000001` (simulating float drift from repeated multiplication)
+3. Verified cache MISS
+
+**Expected:** Float drift should cause a cache miss (safe, re-renders correctly).
+
+**What happened:** Cache key uses string interpolation (`${cssScale}`), so `1.5 !== 1.5000000001`. The lookup correctly misses, forcing a re-render at the new scale.
+
+**Verdict:** SAFE — Exact string comparison prevents wrong-scale bitmap reuse. Float drift causes inefficiency (re-render) but no correctness bug.
+
+#### 4. Eviction correctness (ADV-1571-04)
+**Probe:** Drive more than 24 distinct cache entries in one tab, force `pruneTabCache`, confirm the evicted oldest page re-renders cleanly on return.
+
+**What I did:**
+1. Stored 30 bitmaps (pages 1-30) in one tab's cache
+2. Called `pruneTabCache("tab-a")` (default limit 24)
+3. Verified pages 1-6 were evicted and closed, pages 7-30 remained cached
+
+**Expected:** Oldest 6 entries evicted, remaining 24 accessible.
+
+**What happened:** LRU eviction worked correctly. Pages 1-6 were closed (`.close()` called once each), pages 7-30 remained cached. The `pruneTabCache` is called AFTER render completes (PageView.tsx:852), so evicted bitmaps are not in-flight.
+
+**Verdict:** SAFE — Eviction runs after render, LRU ordering correct, no closed-bitmap draw.
+
+#### 5. Rapid open/close/switch churn (ADV-1571-05)
+**Probe:** 20x open scanned.pdf, switch and close; confirm no unbounded growth of the module cache and no leaked ImageBitmaps.
+
+**What I did:**
+1. Simulated rapid tab creation/closure with 30 pages per tab
+2. Verified `clearTabCache` on close closes all bitmaps
+3. Verified cache does not grow unbounded (cap 24/tab)
+
+**Expected:** Each tab's cache cleared on close, no leaked bitmaps.
+
+**What happened:** `clearTabCache` correctly closes all bitmaps for the closed tab. Other tabs' caches remain untouched (verified tab isolation). The 24-entry cap per tab prevents unbounded growth.
+
+**Verdict:** SAFE — Tab isolation correct, memory bounded.
+
+#### 6. Eager pre-render race (ADV-1571-06)
+**Probe:** App.tsx:2506 `setCachedBitmap(id,1,1,0,bitmap)` runs as a fire-and-forget IIFE alongside the real first render; confirm no double-store closes the bitmap the visible canvas is about to use.
+
+**What I did:**
+1. Simulated eager pre-render storing bitmap1
+2. Simulated real render storing bitmap2 (same key)
+3. Verified bitmap1 was closed (replaced), bitmap2 retained
+
+**Expected:** If eager bitmap is replaced by real render, it should be closed safely.
+
+**What happened:** `setCachedBitmap` correctly calls `disposeEntry` on the old bitmap when replacing the same key. The eager bitmap is closed, the real render's bitmap is retained. The IIFE failures are swallowed (line 2508-2510), so a failed pre-render never blocks open.
+
+**Verdict:** SAFE — Double-store handled correctly, eager failure does not block open.
+
+#### 7. Non-scanned regression (ADV-1571-07)
+**Probe:** A text-heavy PDF opens/switches unchanged; the text layer is still built on the next non-hit render.
+
+**What I did:**
+1. Reviewed PageView.tsx cache-hit path (lines 539-560)
+2. Verified cache miss falls through to full `doc.getPage -> render -> getTextContent -> TextLayer` pipeline
+
+**Expected:** Cache miss should trigger full render pipeline including text layer.
+
+**What happened:** The cache-hit early return (line 560) only executes if `cached !== null`. On a miss, execution continues to line 563 (`beginRender()`) and the full pipeline runs. Text-heavy PDFs without cached bitmaps render normally.
+
+**Verdict:** SAFE — Cache miss correctly falls through to full render.
+
+### Additional probes
+
+#### ADV-1571-08: Concurrent renders same page
+**Probe:** Two renders of the same page at the same scale/rotation concurrently.
+
+**What I did:** Reviewed code — `setCachedBitmap` replaces the old bitmap if the key matches.
+
+**Verdict:** SAFE — Last writer wins, old bitmap closed.
+
+#### ADV-1571-09: Rotation normalization
+**Probe:** Does rotation=0 and rotation=360 produce the same key?
+
+**What I did:** Checked cache key construction — `${tabId}:${sourcePage}:${cssScale}:${rotation}`.
+
+**Finding:** `rotation=0` and `rotation=360` produce DIFFERENT keys (`tab:1:1:0` vs `tab:1:1:360`). If the UI normalizes rotation to [0, 90, 180, 270], this is fine. If rotation can be 360+, cache misses will occur.
+
+**Verdict:** INFO — Caller should normalize rotation to [0,90,180,270] for cache efficiency. Not a correctness bug, just potential inefficiency.
+
+### Test results
+- `test/unit/renderer/pageBitmapCache.test.ts` — 8/8 passed (existing coverage)
+- `test/unit/renderer/pageBitmapCache-adversarial.test.ts` — 7/7 passed (adversarial probes)
+
+### Findings
+
+| ADV ID | Finding | Severity | Triage |
+| --- | --- | --- | --- |
+| ADV-1571-01 | Close-while-referenced race | NONE | SAFE — React ordering prevents use-after-close |
+| ADV-1571-02 | Stale bitmap after proxy refresh | NONE | SAFE — Invalidation runs before read |
+| ADV-1571-03 | Float drift in cssScale key | NONE | SAFE — Causes miss (inefficient but correct) |
+| ADV-1571-04 | Eviction closes in-flight bitmap | NONE | SAFE — Prune runs after render completes |
+| ADV-1571-05 | Rapid churn leaks bitmaps | NONE | SAFE — clearTabCache on close, cap 24/tab |
+| ADV-1571-06 | Eager pre-render race | NONE | SAFE — Double-store closes old bitmap |
+| ADV-1571-07 | Non-scanned regression | NONE | SAFE — Cache miss falls through to full render |
+| ADV-1571-08 | Rotation normalization | INFO | Caller should normalize rotation to [0,90,180,270] |
+
+### Verdict
+
+**PASS** — No material defects identified. The bitmap cache implementation is robust against all adversarial probes in the diff-pass scope. All seven required attacks were safely handled by design:
+
+1. React's state → unmount → cleanup ordering prevents use-after-close
+2. Invalidation runs before cache read
+3. Exact string key comparison prevents wrong-scale bitmap reuse
+4. LRU eviction runs after render completes
+5. Tab isolation and memory caps prevent leaks
+6. Double-store safely closes old bitmaps
+7. Cache miss correctly falls through to full render
+
+**Disposition:** PASS — ready for phase-close.
+
+**CTO disposition:** Triaged (CTO, TFL-1571). ADV-1571-01..07 REJECTED — each probe confirmed SAFE with a real run/read, no defect to accept, no DEF filed. ADV-1571-08 (INFO, rotation normalization) REJECTED — rotation is a quarter-turn index, not degrees: `DocumentView.tsx:5134` passes `pageRotation = engineState.rotations[visiblePage - 1] ?? 0` and `PageView.tsx:662,976` consume it as `% 4`, so a `0` vs `360` collision cannot occur; any out-of-range value only produces a safe cache miss (re-render), never a wrong-bitmap draw. No DEF filed. Proceed to phase-close QA then Chunk E commit.
+
+---
