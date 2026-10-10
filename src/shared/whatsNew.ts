@@ -23,6 +23,19 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.53.0',
+    date: '2026-10-10',
+    highlights: [
+      'Tabs now keep their own tool stage: switching tabs no longer resets the stage you were working in.',
+      'The tab strip matches Chrome exactly - the same sizes and spacing, with clear active, hover and inactive states.',
+      'The top-bar Find button now opens search, and the search and replace fields line up.',
+      'Canvas notices fold into a single "i" you can reopen, instead of several floating pop-ups.',
+      'Dialog and text-box actions are inline now: Delete, Remove and Edit sit on the item instead of behind a More menu.',
+      'Large scanned PDFs open and switch instantly, with page bitmaps cached and reused.',
+      'Visual fixes across the Review Annotations panel, collapsed panel headers and the Pages preview border, with clearer icon contrast in the View Strip.',
+    ],
+  },
+  {
     version: '1.52.1',
     date: '2026-10-09',
     highlights: [
