@@ -23,6 +23,15 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.53.1',
+    date: '2026-10-10',
+    highlights: [
+      'A release-quality patch: the foundation-style and import-wiring checks that gate each release are green again, with corrected stylesheet tokens.',
+      'Cancelling an in-progress file import is wired and verified end to end.',
+      'No new features - this update keeps the automated quality bar intact.',
+    ],
+  },
+  {
     version: '1.53.0',
     date: '2026-10-10',
     highlights: [

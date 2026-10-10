@@ -5,6 +5,87 @@
 > inspect the current `OPEN`, `FIX-READY`, and `DISPUTED` entries first; closed records are
 > historical evidence and must not be loaded wholesale.
 
+## DEF-685: phase53_convertImport wiring assertion is red — App.tsx no longer matches `/window.tflex.convert?.cancel(docId)/`
+
+- Status: OPEN
+- Severity: MEDIUM
+- Found by: qa (TFL-1641 release-gate verify:full)
+- Phase: 1.53.0 release gate (TFL-1638 chunk C)
+
+Steps to reproduce:
+1. From the app root, run `npm.cmd run test:unit -- test/unit/renderer/phase53_convertImport.test.tsx`.
+
+Expected: the cancel control's wiring assertion passes (`test/unit/renderer/phase53_convertImport.test.tsx:448`).
+
+Actual: `Test Files 1 failed | 1 (20 tests | 1 failed)`. Failure `the cancel control calls convert.cancel with the job id` (`:448`): `AssertionError: expected 'import { cloneElement, useCallback, u…' to match /window\.tflex\.convert\?\.cancel\(doc…/`. The App.tsx source no longer contains the literal `window.tflex.convert?.cancel(docId)` form the test greps for.
+
+Evidence:
+- `npm.cmd run verify:full` (release gate, 2026-10-10) — 3 files / 4 tests failed; this is failure [4/4].
+- Log: `<scratch>/verify-full.log` (verbatim block at the "Failed Tests 4" section).
+
+Fix direction: developer determines whether the cancel wiring regressed (product) or the call was refactored to a form the source-regex test must track (stale oracle); update source or the test accordingly. Do not weaken the assertion without confirming the cancel IPC still fires.
+
+## DEF-684: foundationMirrors shelf feedback-token assertion is red after the DEF-677 fix moved `--activity-*` to `:root`
+
+- Status: OPEN
+- Severity: LOW
+- Found by: qa (TFL-1641 release-gate verify:full)
+- Phase: 1.53.0 release gate (TFL-1638 chunk C); caused by the DEF-677 fix, not by the uncommitted `whatsNew.ts` entry
+
+Steps to reproduce:
+1. From the app root, run `npm.cmd run test:unit -- test/unit/renderer/foundationMirrors.test.ts`.
+
+Expected: `points the shelf success / danger roles at the feedback tokens` passes (`foundationMirrors.test.ts:223`).
+
+Actual: `AssertionError: expected undefined to be 'var(--feedback-success)'`. The test reads `decls(block(".activity-shelf"))` (`:211`); the DEF-677 fix relocated the five `--activity-*` role tokens from `.activity-shelf` to `:root` (`src/renderer/styles.css:832-841`, comment: "DEF-677 — activity role tokens live at :root"), so the `.activity-shelf` block no longer contains them.
+
+Evidence:
+- `src/renderer/styles.css:837-841` — tokens now at `:root`; `.activity-shelf` block is empty of them.
+- `npm.cmd run verify:full` (2026-10-10) — failure [3/4]; log `<scratch>/verify-full.log`.
+
+Fix direction: test-oracle drift — point the assertion at `:root` (the tokens' new scope), or assert the consumer rule `.activity-shelf-summary-mark[data-activity-shelf-role=success]` still resolves `var(--activity-success)`. No product change expected; the DEF-677 move is correct (it fixes the canvas notice).
+
+## DEF-683: foundationGuards reports raw elevation / radii literals in migrated stylesheet rule bodies (release-gate red)
+
+- Status: OPEN
+- Severity: LOW
+- Found by: qa (TFL-1641 release-gate verify:full)
+- Phase: 1.53.0 release gate (TFL-1638 chunk C)
+
+Steps to reproduce:
+1. From the app root, run `npm.cmd run test:unit -- test/unit/renderer/foundationGuards.test.ts`.
+
+Expected: `a migrated stylesheet rule body contains no raw elevation or radii literal` passes (`foundationGuards.test.ts:779`).
+
+Actual: `AssertionError: raw elevation / radii literal in a migrated stylesheet: expected [ …(2) ] to deeply equal []`. Two violations:
+- `styles.css .context-panel-page-actions .context-panel-layout, .context-panel-page-actions .context-panel-remove-blank, .context-panel-page-actions .context-panel-combine { border-radius: var(--view-strip-radius, 8px) }` (raw `8px` fallback).
+- `styles.css .thumb-overlay .thumb-label { text-shadow: 0 0 2px var(--bg-raised), 0 0 4px var(--bg-raised) }` (raw `2px` / `4px`).
+
+Evidence:
+- `npm.cmd run verify:full` (2026-10-10) — failure [2/4]; log `<scratch>/verify-full.log`.
+
+Fix direction: replace the raw literals with foundation tokens (or add a reasoned allow-list entry per the Phase 100 ruling) in the SAME chunk that introduced them.
+
+## DEF-682: foundationGuards MIGRATED_SURFACES is red — `components/ActivityAlertNotice.tsx` is walked but not registered (recurrence of DEF-593 / DEF-598)
+
+- Status: OPEN
+- Severity: LOW
+- Found by: qa (TFL-1641 release-gate verify:full)
+- Phase: 1.53.0 release gate (TFL-1638 chunk C). Same class as DEF-593 and DEF-598: a renderer `.tsx` added by one phase must be registered in `MIGRATED_SURFACES` in the SAME chunk.
+
+Steps to reproduce:
+1. From the app root, run `npm.cmd run test:unit -- test/unit/renderer/foundationGuards.test.ts`.
+
+Expected: `MIGRATED_SURFACES covers every renderer TSX exactly (complete, not stale)` passes (`foundationGuards.test.ts:702`); `MIGRATED_SURFACES` equals the renderer `.tsx` walk.
+
+Actual: `AssertionError: expected [ 'App.tsx', …(128) ] to deeply equal [ 'App.tsx', …(129) ]`. The walk (expected) contains `components/ActivityAlertNotice.tsx`; `MIGRATED_SURFACES` (received) omits it (129 listed vs 130 walked, 0 stale). The file exists on disk (`src/renderer/components/ActivityAlertNotice.tsx`).
+
+Evidence:
+- `src/renderer/components/ActivityAlertNotice.tsx` exists; not present in the `MIGRATED_SURFACES` list.
+- `npm.cmd run verify:full` (2026-10-10) — failure [1/4]; log `<scratch>/verify-full.log`.
+
+Fix direction: add `components/ActivityAlertNotice.tsx` to `MIGRATED_SURFACES` (frontend-dev, same chunk that added the component).
+
 ## DEF-681: CONTROL-INDEX cites tfl1620_exitTransitions.test.tsx as evidence for the ContextPanel drawer dismiss, but that file has no ContextPanel test (false coverage claim)
 
 - Status: FIX-READY

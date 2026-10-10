@@ -240,7 +240,7 @@ import { formatBytes as formatBytesForToast } from "./utils/formatBytes";
 import { downloadBlob } from "./utils/exportDownload";
 import { PasswordPromptDialog } from "./components/PasswordPromptDialog";
 import { ProtectionNotice } from "./components/ProtectionNotice";
-import { ConversionNotice } from "./components/ConversionNotice";
+import { ConversionNotice, ConversionProgress } from "./components/ConversionNotice";
 // Phase 126 (chunk B1) — the in-canvas warning/error notice that replaces the
 // retired warning/error toast popups.
 import { CanvasAlertNotice } from "./components/CanvasAlertNotice";
@@ -287,6 +287,7 @@ import {
   toastForConvertError,
   unsupportedFileMessage,
   type ConvertNoticeState,
+  type ConvertProgressState,
 } from "./state/convert";
 import { EncryptDialog, type EncryptDialogConfirm } from "./components/EncryptDialog";
 import {
@@ -1064,10 +1065,15 @@ export function App(): ReactElement {
     Record<string, DocumentProtectionState>
   >({});
   // Phase 53 (feature I) — the import surface. `convertNotices` is the
-  // conversion card payload per tab (dismissed entries are deleted). The
-  // running affordance is the Activity Shelf (TFL-1216 C5); the standalone
-  // ConversionProgress widget is no longer mounted.
+  // conversion card payload per tab (dismissed entries are deleted).
+  // `convertProgress` is the live import affordance: the retired Activity Shelf
+  // left a running conversion with no cancellation channel, so the window-level
+  // ConversionProgress (with its job-addressed cancel) is mounted again below.
   const [convertNotices, setConvertNotices] = useState<Record<string, ConvertNoticeState>>({});
+  // Phase 53 (feature I) — the live import affordance. Mounted once for the
+  // whole window (a conversion runs before its tab exists) with a cancel
+  // control addressed by the job id; null when no import is running.
+  const [convertProgress, setConvertProgress] = useState<ConvertProgressState | null>(null);
   // Phase 56 (features A / C) — the NON-dismissible source format per tab. The
   // conversion card above can be dismissed; this record cannot, so the
   // reading / comic trigger stays reachable for the tab's whole lifetime. It is
@@ -2826,6 +2832,9 @@ export function App(): ReactElement {
         onDiskPath: null,
       };
       const docId = crypto.randomUUID();
+      // A visible affordance from the first frame; runConvertOpen refines the
+      // phase as main pushes progress.
+      setConvertProgress({ docId, phase: "Preparing" });
       // TFL-1216 (chunk C5) — capture the operation identity at start. The
       // conversion has no tab yet, so the minted docId is the stable placeholder
       // for the tab id; the real tab arrives on `opened` and is returned to the
@@ -2877,6 +2886,9 @@ export function App(): ReactElement {
         // `ratio` is discarded by convertProgressAction: an indeterminate phase
         // label, never a fabricated total or percentage.
         onProgress: (progress) => {
+          // The window-level affordance mirrors the same progress; null on
+          // settle clears it.
+          setConvertProgress(progress);
           if (progress === null) return;
           dispatchActivityShelf(
             convertProgressAction(operationId, {
@@ -2893,6 +2905,7 @@ export function App(): ReactElement {
         mintDocId: () => docId,
       });
       convertShelfOpRef.current = null;
+      setConvertProgress(null);
       if (opened.kind === "opened") {
         dispatchActivityShelf({ type: "complete", id: operationId });
         await recordRecentOpen(path, displayName);
@@ -13984,6 +13997,17 @@ pushToast(
           void onCloseTabPromptChoose(choice);
         }}
       />
+      {/* Phase 53 (feature I) — the import progress affordance. Mounted once
+       * for the whole window (a conversion runs before its tab exists), with
+       * a cancel control addressed by the job id. */}
+      {convertProgress !== null && (
+        <ConversionProgress
+          progress={convertProgress}
+          onCancel={(docId): void => {
+            window.tflex.convert?.cancel(docId);
+          }}
+        />
+      )}
       <Toasts items={errorState.toasts} onDismiss={dismissToast} />
       {/* Phase 36 (chunk 4) — the Command Palette. Mounted once for the whole
        * window (so it works on the welcome screen and never doubles up in

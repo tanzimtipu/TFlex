@@ -56,6 +56,7 @@ const MIGRATED_SURFACES: readonly string[] = [
   "components/AccountMenu.tsx",
   "components/AccountsDialog.tsx",
   "components/ActionDock.tsx",
+  "components/ActivityAlertNotice.tsx",
   "components/ActivityShelf.tsx",
   "components/AnimatedDialog.tsx",
   "components/AnimatedPanel.tsx",
@@ -335,6 +336,8 @@ const CSS_ALLOWLIST: Readonly<Record<string, string>> = {
     "on-page paper: the comic reading page is the scanned page surface and stays paper-white in every theme",
   ".ann-note|filter":
     "on-page annotation content: the committed sticky-note icon is painted into the annotation layer over the page, so its contact drop-shadow is part of the rendered annotation, not chrome (same contract as the AnnotationOverlay note/ stamp allow-list)",
+  ".thumb-overlay .thumb-label|text-shadow":
+    "on-page ink legibility halo (TFL-1585): the page-number label floats directly on the paper-white page with no bar behind it, so a two-stop theme-colour halo (0 0 2px / 0 0 4px var(--bg-raised)) keeps it readable on the white page in every theme; the offsets are a functional legibility affordance, not chrome elevation, and there is no text-shadow foundation token",
   // --- DEF-545: the canonical reduced-motion no-motion sentinels ---
   "@media (prefers-reduced-motion: reduce)|animation":
     "canonical reduced-motion catch-all: 0.01ms / 0ms are the no-motion sentinels that collapse every animation to an instant state change (still reaching the end pose); this is the motion-control layer, not authored motion",

@@ -197,6 +197,28 @@ Outstanding debt to fold in: migrate the 10 e2e specs off the retired
 unit-suite files chunk A reported as pre-existing vs chunk-A-caused.
 
 
+## 2026-10-10: Release chain gated a ship step on a QA child's STATUS, not its VERDICT
+
+The TFL-1638 release chain set the git-agent publish child (TFL-1642 Chunk D)
+`blockedBy` the qa verification child (TFL-1641 Chunk C). qa reported
+`Status: FAIL` (3 files / 4 tests red; filed DEF-682..685 in
+`test/unit/renderer/foundationGuards.test.ts` and `foundationMirrors.test.ts` and
+`phase53_convertImport.test.tsx`) but its ISSUE still settled `done`, so the
+server treated the blocker as resolved, released Chunk D, and git-agent built,
+tagged, pushed and published Jovrel 1.53.0 with the full suite RED - exactly the
+push-gate failure the operator's "full suite must be green before a release push"
+rule forbids. Cost: a shipped release with red CI on every pushed commit, four new
+defects, and a forced 1.53.1 hotfix.
+
+Rule: a release/publish child must be gated on the qa VERDICT, not on the qa
+issue's terminal status. `blockedByIssueIds` unblocks on ANY terminal status
+(`done`/`cancelled`), so `done` is never `PASS`. For a release, do not pre-file the
+publish child behind the verify child with blockers alone: either file the publish
+child only AFTER qa returns PASS, or make the qa brief responsible for holding the
+publish child (leave it blocked / reopen it) on any FAIL. The CTO brief must state
+this explicitly; a "verify then ship" chain with plain blockers is a delegation bug.
+
+
 ## Current runtime discipline
 
 Paperclip owns scheduling and session recovery. Model pins are live agent settings.

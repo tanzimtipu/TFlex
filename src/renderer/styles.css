@@ -18106,7 +18106,7 @@ rect.ann-highlight.ann-preview {
   text-overflow: ellipsis;
   height: var(--view-strip-target, 32px);
   padding: 0 10px;
-  border-radius: var(--view-strip-radius, 8px);
+  border-radius: var(--view-strip-radius);
   gap: 6px;
   font-size: var(--fs-sm);
   color: var(--fg-strong);

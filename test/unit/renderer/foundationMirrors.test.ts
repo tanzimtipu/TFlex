@@ -52,6 +52,13 @@ function decls(body: string): Map<string, string> {
 const root = decls(block(":root"));
 const dark = decls(block(':root\\[data-theme="dark"\\]'));
 const frosted = decls(block(':root\\[data-theme="frosted"\\]'));
+// DEF-677 moved the --activity-* role tokens out of the retired `.activity-shelf`
+// scope and into a SECOND `:root` block (styles.css:818-842). `block(":root")`
+// returns the FIRST `:root`, so read the block that carries the role tokens
+// directly for the feedback-palette assertion below.
+const activityRoot = decls(
+  /:root\s*\{([\s\S]*?--activity-progress[\s\S]*?)\n\}/.exec(CSS)?.[1] ?? "",
+);
 
 /** A required token value, or a loud failure naming the missing token. */
 function token(map: Map<string, string>, name: string): string {
@@ -208,8 +215,6 @@ describe("foundation mirrors — color.ts three-scope parity", () => {
 // these WITHOUT touching the shared --success / --error tokens other categories
 // still use.
 describe("foundation mirrors — feedback palette (TFL-1241)", () => {
-  const shelf = decls(block(".activity-shelf"));
-
   it("pins the feedback success / danger tokens in all three scopes", () => {
     expect(token(root, "--feedback-success")).toBe("#25754A");
     expect(token(root, "--feedback-danger")).toBe("#B82E43");
@@ -220,8 +225,8 @@ describe("foundation mirrors — feedback palette (TFL-1241)", () => {
   });
 
   it("points the shelf success / danger roles at the feedback tokens", () => {
-    expect(shelf.get("--activity-success")).toBe("var(--feedback-success)");
-    expect(shelf.get("--activity-danger")).toBe("var(--feedback-danger)");
+    expect(token(activityRoot, "--activity-success")).toBe("var(--feedback-success)");
+    expect(token(activityRoot, "--activity-danger")).toBe("var(--feedback-danger)");
   });
 
   it("leaves the shared --success / --error values untouched", () => {
