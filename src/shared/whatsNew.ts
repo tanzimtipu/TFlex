@@ -23,6 +23,15 @@ export interface WhatsNewEntry {
 /** Ordered newest first. */
 export const WHATS_NEW: WhatsNewEntry[] = [
   {
+    version: '1.54.0',
+    date: '2026-10-10',
+    highlights: [
+      'Document tabs are rebuilt as Chrome-style floating pills: the same pill size and rounded corners, with clear active, hover and inactive states.',
+      'Each pill keeps a persistent close control, and a middle-click on a tab closes it like a browser tab.',
+      'The tab strip now sits on a sleeker rail that matches the app chrome.',
+    ],
+  },
+  {
     version: '1.53.1',
     date: '2026-10-10',
     highlights: [
