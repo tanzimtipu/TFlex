@@ -11,13 +11,18 @@ const os = require('node:os');
 const { launchApp, getSamplePath } = require('./lib/launch.cjs');
 const {
   hardClose,
+  openSamplePath,
   openStandalonePrintWindow,
   closeStandalonePrintWindow,
 } = require('./lib/helpers.cjs');
 
 const SHOTS = path.resolve(__dirname, '..', 'screenshots');
-const MIN_TAB = 136;
-const MAX_TAB = 220;
+// Phase 105 migrated to the Intake open flow (TFL-1653). The rendered band is
+// the chrome pill geometry: the planner floor is LAYOUT.railMinTabPx (148px)
+// and the pill ceiling is the chrome `max-width: 360px`
+// (`.tab-area[data-tab-style="chrome"] .tab-list > li[data-animated-tab]`).
+const MIN_TAB = 148;
+const MAX_TAB = 360;
 const MULTI_MODE_REASON = 'Turn off Multi Mode to create a new document';
 
 let app = null;
@@ -46,16 +51,13 @@ test.afterEach(async () => {
   win = null;
 });
 
-async function setNextDialogPath(filePath) {
-  await app.evaluate(async ({ dialog }, fp) => {
-    dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [fp] });
-  }, filePath);
-}
-
+// TFL-1653 — generic Open now stages the picked file in the Intake Tray and
+// needs the tray's explicit Open click, so the local dialog-stub opener is
+// retired in favour of the canonical Intake-aware `openSamplePath`. It clicks
+// the real Open control, drives the tray, and resolves once the document is
+// rendered.
 async function openPath(filePath) {
-  await setNextDialogPath(filePath);
-  await win.locator('[data-toolbar-open]').first().click();
-  await win.waitForTimeout(200);
+  await openSamplePath(win, app, filePath);
 }
 
 // DEF-583: the File-menu / application-menu surfaces are TfMorph popovers whose
@@ -767,20 +769,45 @@ test('CONTROL-INDEX: File and application menus carry every inventoried command;
 });
 
 // ---------------------------------------------------------------------------
-// ADV-225 (DEF-* HIGH) rendered regression guard: above 900px the File-menu
-// popover must stay an anchored, opaque, width-bounded dropdown. Pre-fix the
-// retired app-menu's `.app-menu*` rules were nested in the 900px responsive
-// band, so at 1440/1280 the popover computed `position: static` and rendered as
-// a ~925px in-flow block that overlapped the title row and the document rail.
-// The restored Phase 127 File menu inherits the same containment contract.
+// ADV-225 (DEF-595, HIGH) rendered regression guard: above 900px the File-menu
+// popover must stay an anchored, opaque, width-bounded dropdown that never
+// falls back into an in-flow block. Pre-fix the retired app-menu's `.app-menu*`
+// rules were nested in the 900px responsive band, so at 1440/1280 the popover
+// computed `position: static` and rendered as a ~925px in-flow block that
+// overlapped the title row and the document rail.
+//
+// TFL-1653 — the oracle was re-targeted to the SHIPPED File-menu layout. Phase
+// 127 relocated the File trigger from the trailing edge (the DEF-595 retest read
+// `pop.right == trig.right` at 1158.66) to the LEADING edge after the brand, so
+// the dropdown now anchors to the trigger's LEFT edge and legitimately overlays
+// the rail below it. The in-flow regression is guarded by the out-of-flow
+// `position` assertion plus the rail-not-pushed check (the rail's settled rect
+// is byte-identical before and while the popover is open); the < 500px width
+// bound still catches the ~925px in-flow block.
 // ---------------------------------------------------------------------------
 test('ADV-225 regression: File-menu popover is anchored + bounded above 900px (no in-flow rail overlap)', async () => {
   await openCopies(1, 'adv225');
   await win.waitForSelector('.workspace', { timeout: 30000 });
 
+  const railRects = () => win.evaluate(() => {
+    const round = (el) => {
+      if (el === null) return null;
+      const r = el.getBoundingClientRect();
+      return { left: +r.left.toFixed(2), right: +r.right.toFixed(2), top: +r.top.toFixed(2), bottom: +r.bottom.toFixed(2) };
+    };
+    return {
+      rail: round(document.querySelector('.document-rail')),
+      list: round(document.querySelector('.tab-list')),
+    };
+  });
+
   for (const [w, h] of [[1440, 900], [1280, 800]]) {
     await setWindowSize(w, h);
     await win.waitForFunction((vw) => window.innerWidth <= vw + 1, w, { timeout: 8000 });
+    await waitForPopoverClosed('[data-menu-popover]').catch(() => {});
+
+    // Baseline: the rail's settled geometry with the File menu CLOSED.
+    const closed = await railRects();
 
     await win.locator('[data-menu-button]').click();
     await win.waitForSelector('[data-menu-popover]', { state: 'visible', timeout: 8000 });
@@ -793,19 +820,6 @@ test('ADV-225 regression: File-menu popover is anchored + bounded above 900px (n
       const pr = pop.getBoundingClientRect();
       const tr = trig.getBoundingClientRect();
       const cs = getComputedStyle(pop);
-      const parts = [
-        ...document.querySelectorAll('[data-tab-id]'),
-        ...document.querySelectorAll('[data-new-tab]'),
-        ...document.querySelectorAll('[data-all-tabs]'),
-      ].map((el) => el.getBoundingClientRect());
-      const railContent = parts.length === 0 ? null : {
-        left: Math.min(...parts.map((r) => r.left)),
-        right: Math.max(...parts.map((r) => r.right)),
-        top: Math.min(...parts.map((r) => r.top)),
-        bottom: Math.max(...parts.map((r) => r.bottom)),
-      };
-      const railEl = document.querySelector('.document-rail');
-      const rr = railEl === null ? null : railEl.getBoundingClientRect();
       return {
         position: cs.position,
         zIndex: cs.zIndex,
@@ -813,12 +827,11 @@ test('ADV-225 regression: File-menu popover is anchored + bounded above 900px (n
         width: +pr.width.toFixed(2),
         pop: { left: +pr.left.toFixed(2), right: +pr.right.toFixed(2), top: +pr.top.toFixed(2), bottom: +pr.bottom.toFixed(2) },
         trig: { left: +tr.left.toFixed(2), right: +tr.right.toFixed(2), top: +tr.top.toFixed(2), bottom: +tr.bottom.toFixed(2) },
-        rail: rr === null ? null : { left: +rr.left.toFixed(2), right: +rr.right.toFixed(2), top: +rr.top.toFixed(2), bottom: +rr.bottom.toFixed(2) },
-        railContent,
         viewportW: window.innerWidth,
       };
     });
-    console.log(`[P105 ADV-225 ${w}x${h}] ${JSON.stringify(geo)}`);
+    const open = await railRects();
+    console.log(`[P105 ADV-225 ${w}x${h}] geo=${JSON.stringify(geo)} railClosed=${JSON.stringify(closed)} railOpen=${JSON.stringify(open)}`);
     expect(geo, `${w}: File-menu popover + trigger present`).not.toBeNull();
 
     expect(geo.viewportW, `${w}: viewport is in the >900px band (defect trigger)`).toBeGreaterThan(900);
@@ -827,13 +840,17 @@ test('ADV-225 regression: File-menu popover is anchored + bounded above 900px (n
     expect(geo.width, `${w}: popover width is bounded (< 500px)`).toBeLessThan(500);
     expect(geo.width, `${w}: popover keeps a real minimum width`).toBeGreaterThan(150);
     expect(geo.pop.top, `${w}: popover top is at/below the trigger bottom`).toBeGreaterThanOrEqual(geo.trig.bottom - 1);
-    expect(Math.abs(geo.pop.right - geo.trig.right), `${w}: popover right is anchored to the trigger right`).toBeLessThanOrEqual(2);
-
-    if (geo.railContent !== null) {
-      const overlap = !(geo.pop.right < geo.railContent.left || geo.pop.left > geo.railContent.right ||
-        geo.pop.bottom < geo.railContent.top || geo.pop.top > geo.railContent.bottom);
-      expect(overlap, `${w}: popover does not overlap the rail's tab strip / reserved controls`).toBe(false);
-    }
+    // TFL-1653 — the File trigger sits on the leading edge after the brand, so
+    // the dropdown anchors to the trigger's LEFT edge. The DEF-595 retest only
+    // saw `pop.right == trig.right` because the trigger was on the trailing edge.
+    expect(Math.abs(geo.pop.left - geo.trig.left), `${w}: popover left is anchored to the trigger left`).toBeLessThanOrEqual(2);
+    // The popover is an overlay, never an in-flow block: the rail's settled rect
+    // is identical with the menu open and closed (the DEF-595 regression symptom).
+    expect(open.rail, `${w}: the popover does not push/reflow the document rail`).toEqual(closed.rail);
+    expect(open.list, `${w}: the popover does not push/reflow the tab strip`).toEqual(closed.list);
+    // The dropdown stays inside the window.
+    expect(geo.pop.left, `${w}: popover left is on-screen`).toBeGreaterThanOrEqual(-1);
+    expect(geo.pop.right, `${w}: popover right is on-screen`).toBeLessThanOrEqual(geo.viewportW + 1);
 
     if (w === 1440) {
       await win.screenshot({ path: path.join(SHOTS, 'phase105-adv225-filemenu-1440x900.png') });
