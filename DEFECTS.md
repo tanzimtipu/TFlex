@@ -7,9 +7,10 @@
 
 ## DEF-685: phase53_convertImport wiring assertion is red — App.tsx no longer matches `/window.tflex.convert?.cancel(docId)/`
 
-- Status: OPEN
+- Status: CLOSED (qa retest, 2026-10-10)
 - Severity: MEDIUM
 - Found by: qa (TFL-1641 release-gate verify:full)
+- Fixed by: frontend-dev (TFL-1644)
 - Phase: 1.53.0 release gate (TFL-1638 chunk C)
 
 Steps to reproduce:
@@ -25,11 +26,18 @@ Evidence:
 
 Fix direction: developer determines whether the cancel wiring regressed (product) or the call was refactored to a form the source-regex test must track (stale oracle); update source or the test accordingly. Do not weaken the assertion without confirming the cancel IPC still fires.
 
+History:
+- qa (TFL-1641): opened on the 1.53.0 release gate.
+- frontend-dev (TFL-1644): NOT a stale oracle — the wiring was genuinely DROPPED (a silent no-op). Root cause: TFL-1219 (c423496) removed the standalone `ConversionProgress` and its `window.tflex.convert?.cancel(docId)` onCancel; TFL-1541 (b70fa14) retired the Activity Shelf panel and its `onActivityShelfCancel` convert branch; the successor `ActivityAlertNotice` has no cancel control, so cancelling a running import became unreachable. Fix: restored the conversion-path cancel affordance in `src/renderer/App.tsx` (re-added the `ConvertProgressState` import, a `convertProgress` state set on start / mirrored in `onProgress` / cleared on settle, and mounted `<ConversionProgress onCancel={(docId) => window.tflex.convert?.cancel(docId)} />`). The `phase53_convertImport.test.tsx:448` assertion was left unchanged and is now satisfied.
+- CTO: FIX-READY, relaying the developer; qa TFL-1645 `verify:full` GREEN (794/794 files, 9341/9341 tests, 0 failures) corroborates. Note: for a conversion both the restored `ConversionProgress` overlay and the `ActivityAlertNotice` can now appear — recorded as an observation, not part of this fix.
+- qa (TFL-1645): retested test/unit/renderer/phase53_convertImport.test.tsx -> 20/20 passed; CLOSED.
+
 ## DEF-684: foundationMirrors shelf feedback-token assertion is red after the DEF-677 fix moved `--activity-*` to `:root`
 
-- Status: OPEN
+- Status: CLOSED (qa retest, 2026-10-10)
 - Severity: LOW
 - Found by: qa (TFL-1641 release-gate verify:full)
+- Fixed by: frontend-dev (TFL-1644)
 - Phase: 1.53.0 release gate (TFL-1638 chunk C); caused by the DEF-677 fix, not by the uncommitted `whatsNew.ts` entry
 
 Steps to reproduce:
@@ -45,11 +53,17 @@ Evidence:
 
 Fix direction: test-oracle drift — point the assertion at `:root` (the tokens' new scope), or assert the consumer rule `.activity-shelf-summary-mark[data-activity-shelf-role=success]` still resolves `var(--activity-success)`. No product change expected; the DEF-677 move is correct (it fixes the canvas notice).
 
+History:
+- qa (TFL-1641): opened on the 1.53.0 release gate.
+- frontend-dev (TFL-1644): test-oracle drift confirmed; no product change. The DEF-677 `--activity-*` tokens live in a SECOND `:root` block (`src/renderer/styles.css:818-842`) and `block(":root")` returns the FIRST, so an `activityRoot` handle was added and the assertion now reads `token(activityRoot, "--activity-success"/"--activity-danger")`. `foundationMirrors.test.ts` 17 passed.
+- qa (TFL-1645): retested test/unit/renderer/foundationMirrors.test.ts -> 17/17 passed; CLOSED.
+
 ## DEF-683: foundationGuards reports raw elevation / radii literals in migrated stylesheet rule bodies (release-gate red)
 
-- Status: OPEN
+- Status: CLOSED (qa retest, 2026-10-10)
 - Severity: LOW
 - Found by: qa (TFL-1641 release-gate verify:full)
+- Fixed by: frontend-dev (TFL-1644)
 - Phase: 1.53.0 release gate (TFL-1638 chunk C)
 
 Steps to reproduce:
@@ -66,11 +80,17 @@ Evidence:
 
 Fix direction: replace the raw literals with foundation tokens (or add a reasoned allow-list entry per the Phase 100 ruling) in the SAME chunk that introduced them.
 
+History:
+- qa (TFL-1641): opened on the 1.53.0 release gate.
+- frontend-dev (TFL-1644): (a) `.context-panel-page-actions ... { border-radius: var(--view-strip-radius, 8px) }` -> `border-radius: var(--view-strip-radius);` (dropped the raw `8px` fallback; the token is defined at `:root`, `src/renderer/styles.css:6366`). (b) `.thumb-overlay .thumb-label` text-shadow: no text-shadow foundation token exists, so a reasoned `CSS_ALLOWLIST` entry (`.thumb-overlay .thumb-label|text-shadow`) was added for the theme-aware legibility halo; the guard itself was not weakened. `foundationGuards.test.ts` 30 passed.
+- qa (TFL-1645): retested test/unit/renderer/foundationGuards.test.ts -> 30/30 passed; CLOSED.
+
 ## DEF-682: foundationGuards MIGRATED_SURFACES is red — `components/ActivityAlertNotice.tsx` is walked but not registered (recurrence of DEF-593 / DEF-598)
 
-- Status: OPEN
+- Status: CLOSED (qa retest, 2026-10-10)
 - Severity: LOW
 - Found by: qa (TFL-1641 release-gate verify:full)
+- Fixed by: frontend-dev (TFL-1644)
 - Phase: 1.53.0 release gate (TFL-1638 chunk C). Same class as DEF-593 and DEF-598: a renderer `.tsx` added by one phase must be registered in `MIGRATED_SURFACES` in the SAME chunk.
 
 Steps to reproduce:
@@ -85,6 +105,11 @@ Evidence:
 - `npm.cmd run verify:full` (2026-10-10) — failure [1/4]; log `<scratch>/verify-full.log`.
 
 Fix direction: add `components/ActivityAlertNotice.tsx` to `MIGRATED_SURFACES` (frontend-dev, same chunk that added the component).
+
+History:
+- qa (TFL-1641): opened on the 1.53.0 release gate.
+- frontend-dev (TFL-1644): added `"components/ActivityAlertNotice.tsx"` to `MIGRATED_SURFACES` in `test/unit/renderer/foundationGuards.test.ts`. The component has no inline styles, so the raw-literal and one-off-motion guards pass; guards untouched. `foundationGuards.test.ts` 30 passed.
+- qa (TFL-1645): retested test/unit/renderer/foundationGuards.test.ts -> 30/30 passed; CLOSED.
 
 ## DEF-681: CONTROL-INDEX cites tfl1620_exitTransitions.test.tsx as evidence for the ContextPanel drawer dismiss, but that file has no ContextPanel test (false coverage claim)
 
