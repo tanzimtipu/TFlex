@@ -47,3 +47,4 @@ screenshots/
 # separate git repository used only to publish OTA assets; never commit it
 # into this product repo.
 /tflex-releases/
+PAPERCLIP_RUN_SCRATCH_DIR/
