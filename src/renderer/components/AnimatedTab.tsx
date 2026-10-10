@@ -137,6 +137,14 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
   // drag-select to disambiguate and no deferred mouseup path.
   const onTabMouseDown = useCallback(
     (e: ReactMouseEvent<HTMLDivElement>): void => {
+      // TFL-1652 — middle-click closes the pill (the Chrome tab gesture). The
+      // non-left button is consumed here so it never reaches the reorder arm
+      // (which already ignores non-left) or the tab activation.
+      if (e.button === 1) {
+        e.preventDefault();
+        onClose(id);
+        return;
+      }
       const action = resolveTabMouseDown({ target: e.target, button: e.button }, [input]);
       if (action === null) return;
       if (action.kind === "activate") {
@@ -207,6 +215,13 @@ export function AnimatedTab(props: AnimatedTabProps): ReactElement {
         style={{ ...dragStyle, ...floatStyle }}
         onMouseDown={onTabMouseDown}
       >
+        {/* TFL-1652 — the leading favicon slot. A 16px document mark that is
+         *  SHOWN only by the chrome (floating-pill) tab style; every other
+         *  style hides it (`.tab-favicon { display: none }`) so their
+         *  silhouettes are untouched. It carries no session state. */}
+        <span className="tab-favicon" aria-hidden>
+          <Icon name="tabDocument" size="sm" />
+        </span>
         {/* Phase 72 (item 3) — the always-on per-tab colour-identity chip is
          *  RETIRED. Phase 105 (chunk D) — `data-tab-color-id` is the single
          *  colour source (per-session identity); the index-slot

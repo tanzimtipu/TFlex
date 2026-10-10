@@ -267,12 +267,14 @@ describe("AnimatedTab", () => {
     expect(h.closed).toEqual(["t1"]);
   });
 
-  it("ignores non-left-button mousedowns (no accidental activation)", () => {
+  it("opens nothing on a right-click; middle-click closes the tab (TFL-1652)", () => {
     const { el, h } = renderTab();
-    mouseDown(el, 1);
-    mouseDown(el, 2);
+    mouseDown(el, 2); // right-click: no activation, no close
     expect(h.activated).toEqual([]);
     expect(h.closed).toEqual([]);
+    mouseDown(el, 1); // middle-click: the Chrome tab close gesture
+    expect(h.closed).toEqual(["t1"]);
+    expect(h.activated).toEqual([]);
   });
 
   it("mousedowns resolving to the already-active tab are no-ops", () => {

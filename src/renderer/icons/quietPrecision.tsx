@@ -150,6 +150,7 @@ export type QuietIconId =
   | "redo"
   | "tabNew"
   | "tabClose"
+  | "tabDocument"
   | "multi-mode"
   | "paneOpen"
   | "panePick"
@@ -892,6 +893,16 @@ export const QUIET_ICONS: Record<QuietIconId, QuietGlyph> = {
   },
   tabNew: { kind: "lucide", icon: Plus },
   tabClose: { kind: "lucide", icon: SquareX },
+  // TFL-1652 — the chrome floating-pill tab favicon: a plain document mark.
+  tabDocument: {
+    kind: "shapes",
+    shapes: (
+      <>
+        <path d="M6.5 3.5h6.2L18 8.8V19a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 5 19V5a1.5 1.5 0 0 1 1.5-1.5Z" />
+        <path d="M12.6 3.5v5.4H18" />
+      </>
+    ),
+  },
   // NEW — two documents side by side (distinct from the two-page layout).
   "multi-mode": {
     kind: "shapes",

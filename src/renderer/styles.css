@@ -379,6 +379,12 @@
   --chrome-titlebar-h: 48px;
   --chrome-commandbar-h: 52px;
   --chrome-contextbar-h: 40px;
+  /* TFL-1652 — the Chrome-style floating-pill ACTIVE tab fill. Steel blue,
+   * measured from the operator's reference. Exposed as a token so the pill
+   * colour is retuned here, never in component code. Intentionally NOT the
+   * TFlex accent. `--tab-strip-bg` is the strip the pills float on. */
+  --tab-active-pill-bg: #1a4974;
+  --tab-strip-bg: #1f2020;
   /* Legacy alias — the toolbar height predates the chrome tokens and is
    * read by the Tools palette + OCR-bar sibling offsets (bugB4 contract
    * reads this exact name in the base palette rule). */
@@ -4070,213 +4076,211 @@ body.tab-reordering .tab-list[data-reorder="true"] .tab {
 }
 
 /* ===========================================================================
- * Phase 123 (chunk B) — CHROME TAB STYLE.
+ * TFL-1652 — CHROME-STYLE FLOATING-PILL TAB STRIP (pixel spec).
  *
- * The operator's reference is a Chrome browser tab strip. This scoped block
- * (mirroring the Phase 58/62/68/72 colorful override structure) paints it
- * WITHOUT touching the 'standard' or 'colorful' looks, the header / strip
- * height tokens, or the tab ARIA / open / close / switch / reorder behavior.
+ * A re-do of the Phase 123 chrome look against the operator's measured spec.
+ * Every pill is a 42px rounded rectangle (12px radius on ALL four corners)
+ * that floats inside a 56px strip (7px above + 42px + 7px below) — it never
+ * merges with the toolbar below. The active pill is a solid steel-blue capsule
+ * (`--tab-active-pill-bg`, #1A4974); inactive pills are fully transparent so
+ * the strip shows through; a hovered inactive pill is #3C3C3C. The close
+ * control is persistently visible on every pill.
  *
- * Silhouette: an inactive tab is the muted strip surface (the toolbar
- * surface, no per-session hue) with rounded top corners and a flush, square
- * bottom edge. The active tab is the raised, lighter/contrasting surface that
- * fills the strip's foot - square bottom corners, no separating border or
- * underline - so it reads as connected to the document below. Exactly one tab
- * is active at all times (the existing `active` / `aria-selected` contract).
- *
- * Hover is strictly visual, inactive-only: it subtly lightens the tab body and
- * reveals its close control, with NO width / height / margin / transform
- * change (zero layout shift), no reorder and no active change. The active tab
- * is never hover-lightened. The whole surface is painted by a ::before layer
- * so it covers the canonical `.btn` background the tab element would
- * otherwise carry. Motion reuses the shared tokens (reduced-motion /
- * Animations-OFF collapse them globally).
+ * Scoped under `.tab-area[data-tab-style="chrome"]` so the 'standard' and
+ * 'colorful' looks are untouched. The row height + strip colour are set on the
+ * rail host (`.document-rail[data-tab-style="chrome"]`, the row that owns the
+ * 40px height / toolbar background) so the pill can float in 56px. The pill
+ * palette is declared once on the strip element as scoped custom properties
+ * so it can be retuned without touching the rules; `--tab-active-pill-bg`
+ * comes from the canonical :root token.
  * ========================================================================= */
 
-/* Phase 123 redo — the strip is bottom-anchored in the 40px rail. The tab row
- * itself is the 34px chrome height and sits flush on the rail's foot so the
- * active tab's fill can merge with the content below. The `+1px` / `-1px`
- * extends the area over the header's own 1px bottom border so the active raised
- * surface covers it (no separating line). The 8px chrome top-corner radius is
- * scoped here; the shared `--tf-tab-radius-top` remains the 9px identity
- * silhouette used by the other styles. Strip height tokens are untouched. */
+/* The rail row hosting the chrome strip grows to the 56px that centres a 42px
+ * pill and paints the strip colour (#1F2020) so the floating pills read. */
+.document-rail[data-tab-style="chrome"] {
+  height: 56px;
+  background: var(--tab-strip-bg);
+}
+
+/* The fixed Chrome-strip palette, scoped to the strip element. */
 .tab-area[data-tab-style="chrome"] {
+  --tab-pill-hover-bg: #3c3c3c;
+  --tab-pill-inactive-ink: #b9bbbe;
+  --tab-pill-hover-ink: #e8eaed;
+  --tab-pill-active-ink: #ffffff;
+  --tab-pill-separator: #494a4a;
   align-self: stretch;
-  height: calc(100% + 1px);
-  margin-bottom: -1px;
-  --tf-tab-radius-top: 8px;
-}
-
-/* The row is the 34px chrome tab height and bottom-aligns every tab, so an
- * inactive tab's body sits on the strip surface and the active tab's fill
- * reaches the strip foot. */
-.tab-area[data-tab-style="chrome"] .tab-list {
-  align-items: flex-end;
-  height: 34px;
-}
-
-/* Geometry: an inactive tab is a 30px muted chip. The planner's
- * `--tf-tab-width` keeps it inside the Chrome band (72px crowded floor / 240px
- * ceiling) and the padding yields at squeezed widths (the colorful
- * `min(var(--sp-2), width * 0.25)` pattern). Tabs touch (zero gap). */
-.tab-area[data-tab-style="chrome"] .tab {
-  height: 30px;
-  width: var(--tf-tab-width, 240px);
-  min-width: 72px;
-  max-width: 240px;
-  box-sizing: border-box;
-  padding: 0 min(var(--sp-2), calc(var(--tf-tab-width, 240px) * 0.25));
-  margin-right: 0;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  color: var(--fg-muted);
-  font-weight: 400;
-}
-
-/* The muted inactive body: 8px rounded top corners, flush square foot, the
- * toolbar surface. */
-.tab-area[data-tab-style="chrome"] .tab::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  border-top-left-radius: var(--tf-tab-radius-top);
-  border-top-right-radius: var(--tf-tab-radius-top);
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
-  background: var(--bg-toolbar);
-  transition: background var(--motion-fast) var(--ease-out);
-}
-
-/* Keep the tab's own content (dot, title, close) above the fill layer. */
-.tab-area[data-tab-style="chrome"] .tab > * {
-  position: relative;
-  z-index: 1;
-}
-
-/* Inactive label stays muted (this re-asserts over the Phase 105 identity
- * tint for a tab that carries a `data-tab-color-id`). */
-.tab-area[data-tab-style="chrome"] .tab[data-tab-color-id]:not(.tab-active) {
-  color: var(--fg-muted);
-}
-
-/* Per-session identity on an INACTIVE chrome tab is decorative only: a SUBTLE
- * tint into the toolbar surface (<= 15%), so it reads muted, never a bright
- * chip. The ACTIVE tab never paints the saturated identity - it stays the
- * raised content surface below. */
-.tab-area[data-tab-style="chrome"] .tab[data-tab-color-id]:not(.tab-active)::before {
-  background: color-mix(in srgb, var(--tf-tab-identity) 14%, var(--bg-toolbar));
-}
-
-/* Neutralise the shared `.tab:hover` brightness filter for every chrome tab:
- * the active tab must never be hover-lightened, and the surface is painted by
- * ::before so the element background stays transparent. */
-.tab-area[data-tab-style="chrome"] .tab:hover {
-  filter: none;
-  background: transparent;
-}
-
-/* INACTIVE-ONLY hover: a subtle body lighten toward the raised surface. The
- * selector excludes the active tab, so hovering it changes nothing, and it
- * only touches `background` - no size / margin / transform - so there is zero
- * layout shift. */
-.tab-area[data-tab-style="chrome"] .tab:not(.tab-active):hover::before {
-  background: color-mix(in srgb, var(--bg-raised) 25%, var(--bg-toolbar));
-}
-
-.tab-area[data-tab-style="chrome"] .tab[data-tab-color-id]:not(.tab-active):hover::before {
-  background: color-mix(
-    in srgb,
-    var(--bg-raised) 25%,
-    color-mix(in srgb, var(--tf-tab-identity) 14%, var(--bg-toolbar))
-  );
-}
-
-.tab-area[data-tab-style="chrome"] .tab[data-tab-color-id]:not(.tab-active):hover {
-  color: var(--fg-strong);
-}
-
-/* Active tab: the raised, contrasting surface connected to the content below.
- * It fills the strip's foot, squares its bottom corners and drops the shared
- * identity keyline and the VS Code underline (no separating border/line). The
- * label is Chrome's medium 500 (not the shared 600) and the surface is stable -
- * hover never lightens it. */
-.tab-area[data-tab-style="chrome"] .tab-list > li[data-tab-active="true"] {
-  align-self: stretch;
-}
-
-.tab-area[data-tab-style="chrome"] .tab-active,
-.tab-area[data-tab-style="chrome"] .tab.tab-active[data-tab-color-id] {
   height: 100%;
-  color: var(--fg-strong);
+}
+
+/* One row of pills, vertically centred in the 56px strip. */
+.tab-area[data-tab-style="chrome"] .tab-list {
+  align-items: center;
+  height: 56px;
+  gap: 0;
+  padding: 0 8px;
+}
+
+/* The `<li>` is the real flex item of `.tab-list`: a flexible pill slot
+ * (flex 1 1 0, 120px floor, 360px ceiling) that also hosts the separator. */
+.tab-area[data-tab-style="chrome"] .tab-list > li[data-animated-tab] {
+  position: relative;
+  display: flex;
+  align-items: center;
+  flex: 1 1 0;
+  min-width: 120px;
+  max-width: 360px;
+  min-height: 0;
+}
+
+/* Pill geometry: 42px tall, 12px radius on all four corners, the measured
+ * inner insets (14px left for the favicon, 12px right for the close), an 8px
+ * gap between the marks. Transparent at rest — the strip shows through. */
+.tab-area[data-tab-style="chrome"] .tab {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  max-width: none;
+  height: 42px;
+  box-sizing: border-box;
+  padding: 0 12px 0 14px;
+  gap: 8px;
+  margin: 0;
+  border: none;
+  border-radius: var(--radius-group);
+  background: transparent;
+  color: var(--tab-pill-inactive-ink);
+  font-size: var(--fs-md);
+  font-weight: 500;
+  overflow: hidden;
+}
+
+/* Kill the shared per-session identity tint (higher specificity than the
+ * generic `.tab-area .tab[data-tab-color-id]` rule) and the colorful ::before
+ * fill layer. */
+.tab-area[data-tab-style="chrome"] .tab[data-tab-color-id]:not(.tab-active) {
+  background: transparent;
+  color: var(--tab-pill-inactive-ink);
+}
+.tab-area[data-tab-style="chrome"] .tab::before {
+  content: none;
+}
+
+/* The favicon slot: a 16px leading mark. Hidden for the non-chrome styles so
+ * the 'standard' / 'colorful' silhouettes are untouched. */
+.tab-favicon {
+  display: none;
+}
+.tab-area[data-tab-style="chrome"] .tab-favicon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+}
+
+/* Title: 13px / 500 (set on `.tab`), dimmed at rest, ellipsised. */
+.tab-area[data-tab-style="chrome"] .tab-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: none;
+  overflow: hidden;
+}
+.tab-area[data-tab-style="chrome"] .tab-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Inactive hover: #3C3C3C pill, brighter ink. Inactive-only; the active pill
+ * is never re-coloured by hover. */
+.tab-area[data-tab-style="chrome"] .tab:not(.tab-active):hover {
+  background: var(--tab-pill-hover-bg);
+  color: var(--tab-pill-hover-ink);
+  filter: none;
+}
+
+/* Active pill: solid steel blue, white ink, SAME 42px pill and 12px radius as
+ * every other pill — it floats, it never merges with the toolbar below. */
+.tab-area[data-tab-style="chrome"] .tab.tab-active,
+.tab-area[data-tab-style="chrome"] .tab.tab-active[data-tab-color-id] {
+  height: 42px;
+  background: var(--tab-active-pill-bg);
+  color: var(--tab-pill-active-ink);
   font-weight: 500;
   box-shadow: none;
 }
-
-.tab-area[data-tab-style="chrome"] .tab-active::before {
-  background: var(--bg-raised);
-  border-bottom-left-radius: 0;
-  border-bottom-right-radius: 0;
+.tab-area[data-tab-style="chrome"] .tab.tab-active:hover {
+  background: var(--tab-active-pill-bg);
+  filter: none;
 }
-
 .tab-area[data-tab-style="chrome"] .tab-active::after {
   content: none;
 }
 
-/* Close control: hidden at rest on an inactive tab (opacity only, so the 18px
- * slot is always reserved - no layout shift), revealed on the active tab and
- * on inactive hover / keyboard focus, with its own hover wash. */
+/* Separator: a 1px full-height divider drawn in the slot of every pill that
+ * follows another pill. The pills are transparent, so the boundary needs the
+ * line. It is suppressed on the active pill, on hover, and beside an active
+ * or hovered neighbour (Chrome's behaviour). Drawn on the `<li>` (the pill
+ * clips its own overflow) so it spans the full 56px row. */
+.tab-area[data-tab-style="chrome"] .tab-list > li[data-animated-tab] + li[data-animated-tab]::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--tab-pill-separator);
+  pointer-events: none;
+  z-index: 1;
+}
+.tab-area[data-tab-style="chrome"] .tab-list > li[data-animated-tab][data-tab-active="true"]::before,
+.tab-area[data-tab-style="chrome"] .tab-list > li[data-animated-tab]:hover::before,
+.tab-area[data-tab-style="chrome"] .tab-list > li[data-tab-active="true"] + li[data-animated-tab]::before,
+.tab-area[data-tab-style="chrome"] .tab-list > li[data-animated-tab]:hover + li[data-animated-tab]::before {
+  content: none;
+}
+
+/* Close control: a 16px hit area, persistently visible on EVERY pill (active,
+ * inactive and hovered alike), 12px from the pill's right edge (the pill's
+ * padding-right). White ink on the active pill. */
 .tab-area[data-tab-style="chrome"] .tab-close {
-  margin-left: auto;
-  opacity: 0;
-}
-
-.tab-area[data-tab-style="chrome"] .tab-active .tab-close,
-.tab-area[data-tab-style="chrome"] .tab:not(.tab-active):hover .tab-close {
+  margin: 0;
+  flex: 0 0 auto;
+  width: 16px;
+  min-width: 16px;
+  height: 16px;
+  min-height: 16px;
+  padding: 0;
   opacity: 1;
+  color: inherit;
 }
-
-.tab-area[data-tab-style="chrome"] .tab-close:focus-visible {
-  opacity: 1;
+.tab-area[data-tab-style="chrome"] .tab-active .tab-close {
+  color: var(--tab-pill-active-ink);
 }
-
 .tab-area[data-tab-style="chrome"] .tab-close:hover {
-  background: color-mix(in srgb, var(--fg-strong) 12%, transparent);
+  background: color-mix(in srgb, currentColor 18%, transparent);
   opacity: 1;
 }
 
-/* Title yields the trailing space and ellipsises rather than crowding the
- * pinned close control. Short titles are protected by the 72px tab floor (the
- * inner `.tab-title-text` owns the clip). */
-.tab-area[data-tab-style="chrome"] .tab-title {
-  max-width: none;
-  min-width: 0;
-  flex: 0 1 auto;
-  overflow: visible;
-}
-
-/* Chrome-style "+" new-tab: a compact muted square on the tab baseline. The
- * existing control (and its Multi-Mode disabled reason) is only restyled. */
-.tab-area[data-tab-style="chrome"] .tab-list-new {
-  align-items: flex-end;
-}
-
+/* Chrome-style "+" new-tab: a 28px circle pinned at the right end of the row.
+ * The existing control (and its Multi-Mode disabled reason) is only restyled. */
 .tab-area[data-tab-style="chrome"] .tab-new {
   width: 28px;
   min-width: 28px;
   height: 28px;
-  margin: 0 0 3px 4px;
-  border-radius: var(--radius-2);
-  color: var(--fg-muted);
+  margin: 0 0 0 4px;
+  border-radius: 50%;
+  color: var(--tab-pill-inactive-ink);
 }
-
 .tab-area[data-tab-style="chrome"] .tab-new:hover:not([disabled]):not([aria-disabled="true"]) {
-  background: var(--bg-hover);
-  color: var(--fg-strong);
+  background: var(--tab-pill-hover-bg);
+  color: var(--tab-pill-hover-ink);
 }
 
 /* === Phase 123 chrome block end === */
+
 
 /* ---------------------------------------------------------------------------
  * Phase 113 (Quiet Actions) — wave D alias re-pins.

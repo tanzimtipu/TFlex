@@ -908,6 +908,7 @@ export function DocumentRail(props: DocumentRailProps): ReactElement {
     <div
       className="document-rail"
       data-document-rail
+      data-tab-style={tabStyle}
       data-rail-overflow={railCollapsed ? "true" : undefined}
     >
       <div className="tab-area" role="tablist" aria-label="Open documents" data-tab-style={tabStyle} data-tab-tearout={tearOut ? "true" : undefined}>
